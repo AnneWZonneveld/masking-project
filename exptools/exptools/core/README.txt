@@ -1,0 +1,2 @@
+The trial.py file in this folder originates from an earlier version of exptools (see D:\USERS\Stijn\exptools1\exptools).
+With the newer version of the trial.py file, the screen did not update (maybe because of self.session.frame_nr ?) 

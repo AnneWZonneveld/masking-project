@@ -1,0 +1,4 @@
+quest
+numpy
+psychopy
+pygame
