@@ -91,7 +91,7 @@ def extract_all_layers(
 # set input and output paths
 wd = '/Users/AnneZonneveld/Documents/STAGE/masking-project/'
 #image_dir = os.path.join(wd, 'stimuli/images')
-image_dir = os.path.join(wd, 'stimuli/masks')
+image_dir = os.path.join(wd, 'stimuli/DNN_analysis/masks')
 
 output_dir = os.path.join(wd, 'features')
 if not os.path.exists(output_dir):
@@ -179,7 +179,6 @@ if not os.path.exists(develop_dir):
 
 
 # Define nr of masks
-
 natural_masks = [path for path in os.listdir(os.path.join(image_dir, '1_natural')) if path != '.DS_Store']
 total_natural_images = len(natural_masks) 
 
@@ -202,13 +201,12 @@ line_masks = [path for path in os.listdir(os.path.join(image_dir, '5_lines')) if
 n_line_masks = len(line_masks)
 line_labels = ['d=200', 'd=300', 'd=400', 'd=500']
 
-line_masks = [path for path in os.listdir(os.path.join(image_dir, '5_lines')) if path != '.DS_Store']
-n_line_masks = len(line_masks)
-line_labels = ['d=200', 'd=300', 'd=400', 'd=500']
+block_masks = [path for path in os.listdir(os.path.join(image_dir, '6_blocked')) if path != '.DS_Store']
+n_block_masks = len(block_masks)
+block_labels = ['d=4', 'd=16', 'd=64', 'd=256']
 
-
-total_n_masks = total_natural_images + n_scrambled_masks_v1 + n_scrambled_masks_v2 + n_geometric_masks + n_noise_masks
-
+# total_n_masks = total_natural_images + n_scrambled_masks_v1 + n_scrambled_masks_v2 + n_geometric_masks + n_noise_masks 
+total_n_masks = total_natural_images + n_scrambled_masks_v1 + n_scrambled_masks_v2 + n_geometric_masks + n_noise_masks + n_block_masks + n_line_masks
 
 # Keep track of max min values
 overall_max = None
@@ -225,11 +223,16 @@ mean_noise = np.zeros(shape=(5, len(scramble_labels), total_natural_images))
 sem_noise= np.zeros(shape=(5, len(scramble_labels), total_natural_images))
 mean_geometric = np.zeros(shape=(5, len(geometric_labels), total_natural_images))
 sem_geometric = np.zeros(shape=(5, len(geometric_labels), total_natural_images))
+mean_lines = np.zeros(shape=(5, len(line_labels), total_natural_images))
+sem_lines = np.zeros(shape=(5, len(line_labels), total_natural_images))
+mean_block = np.zeros(shape=(5, len(block_labels), total_natural_images))
+sem_block = np.zeros(shape=(5, len(block_labels), total_natural_images))
 
 # Loop through rows (natural images) of RDM
 for row in range(total_natural_images - 1):
     
     target_index = row
+
 
     # Create array with all relevant correlations for specific row (target image) for all relevant layers (upper right triangle) 
     development_info = np.zeros(shape=(len(module_names), rdm.shape[0] - target_index))
@@ -257,6 +260,9 @@ for row in range(total_natural_images - 1):
     #     n_natural_masks = total_natural_images - 1 - target_index
     #     natural_masks_x = development_info[:, develop_index: develop_index + n_natural_masks -1 ]        
     #     mean_natural[:,:, target_index] = natural_masks_x.mean(axis = 1)
+
+    # Track relevant point in RDM
+    develop_index = 1
 
     n_natural_masks = total_natural_images - 1 - target_index
     natural_masks_x = development_info[:, develop_index: develop_index + n_natural_masks] 
@@ -287,9 +293,6 @@ for row in range(total_natural_images - 1):
         overall_max = max_diss
     elif min_diss <  overall_min:
         overall_min = min_diss
-
-    # Track relevant point in RDM
-    develop_index = 1
 
     # Move to next mask cat
     develop_index = develop_index + n_natural_masks
@@ -349,6 +352,29 @@ for row in range(total_natural_images - 1):
         mean_geometric[:, i, row] = geometric_masks_x[:, index].mean(axis=1)
         sem_geometric[:, i, row] = stats.sem(geometric_masks_x[:, index], axis=1)
 
+    # Move to next info
+    develop_index = develop_index + n_geometric_masks
+
+    # Line info
+    line_masks_x = development_info[:, develop_index:develop_index + n_line_masks] 
+    print(f'line: {line_masks_x.shape}')
+
+    for i in range(len(line_labels)):
+        index = np.linspace(i, n_line_masks - len(line_labels) + i - 1, num=int(n_line_masks/len(line_labels))).astype(int)
+        mean_lines[:, i, row] = line_masks_x[:, index].mean(axis=1)
+        sem_lines[:, i, row] = stats.sem(line_masks_x[:, index], axis=1)
+
+    # Move to next info
+    develop_index = develop_index + n_line_masks
+
+    # Line info
+    block_masks_x = development_info[:, develop_index:develop_index + n_block_masks] 
+    print(f'line: {line_masks_x.shape}')
+
+    for i in range(len(block_labels)):
+        index = np.linspace(i, n_block_masks - len(block_labels) + i - 1, num=int(n_block_masks/len(block_labels))).astype(int)
+        mean_block[:, i, row] = block_masks_x[:, index].mean(axis=1)
+        sem_block[:, i, row] = stats.sem(block_masks_x[:, index], axis=1)
 
 
 # Plot grand mean natural masks develop plot 
@@ -453,6 +479,48 @@ plt.tight_layout()
 develop_filename = os.path.join(develop_dir, f'geometric.png')
 fig.savefig(develop_filename)
 
+# Plot grand mean line plot
+fig  = plt.figure()
+grand_mean_lines = mean_lines.mean(axis=2)
+grand_sem_lines = stats.sem(sem_lines, axis=2)
+
+plt.plot(grand_mean_lines, marker='o')
+
+for i in range(sem_lines.shape[1]):
+    plt.errorbar(np.arange(len(module_names)), grand_mean_lines[:, i], yerr=grand_sem_lines[:, i], fmt='o',
+             ecolor='lightblue', capsize=10)
+
+plt.ylim([overall_min - 0.05, overall_max + 0.05])
+plt.title(f"Dissimilarity target-mask: lines")
+plt.xlabel("Network depth", fontsize=15)
+plt.xticks(np.arange(len(module_names)), module_names, rotation = 45)
+plt.ylabel("Dissimilarity", fontsize=15)
+plt.legend(labels= line_labels, loc="upper right")
+plt.tight_layout()
+develop_filename = os.path.join(develop_dir, f'lines.png')
+fig.savefig(develop_filename)
+
+# Plot grand mean block plot
+fig  = plt.figure()
+grand_mean_block = mean_block.mean(axis=2)
+grand_sem_block = stats.sem(sem_block, axis=2)
+
+plt.plot(grand_mean_block, marker='o')
+
+for i in range(sem_block.shape[1]):
+    plt.errorbar(np.arange(len(module_names)), grand_mean_block[:, i], yerr=grand_sem_block[:, i], fmt='o',
+             ecolor='lightblue', capsize=10)
+
+plt.ylim([overall_min - 0.05, overall_max + 0.05])
+plt.title(f"Dissimilarity target-mask: blocked")
+plt.xlabel("Network depth", fontsize=15)
+plt.xticks(np.arange(len(module_names)), module_names, rotation = 45)
+plt.ylabel("Dissimilarity", fontsize=15)
+plt.legend(labels= block_labels, loc="upper right")
+plt.tight_layout()
+develop_filename = os.path.join(develop_dir, f'blocked.png')
+fig.savefig(develop_filename)
+
 
 # Grand mean overview plot
 fig  = plt.figure()
@@ -461,6 +529,9 @@ plt.plot(grand_mean_scrambled_v1.mean(axis = 1), marker ='o', label='scrambled v
 plt.plot(grand_mean_scrambled_v2.mean(axis = 1), marker ='o', label='scrambled v2')
 plt.plot(grand_mean_geometric.mean(axis = 1), marker ='o', label='geometric')
 plt.plot(grand_mean_noise.mean(axis = 1), marker ='o', label='noise')
+plt.plot(grand_mean_lines.mean(axis = 1), marker ='o', label='lines')
+plt.plot(grand_mean_block.mean(axis = 1), marker ='o', label='blocked')
+
 plt.errorbar(np.arange(len(module_names)), grand_mean_natural, yerr=grand_sem_natural, fmt='o',
              ecolor='lightblue', capsize=10)
 plt.errorbar(np.arange(len(module_names)), grand_mean_scrambled_v1.mean(axis = 1), yerr= stats.sem(grand_sem_scrambled_v1, axis=1), fmt='o',
@@ -471,199 +542,10 @@ plt.errorbar(np.arange(len(module_names)), grand_mean_geometric.mean(axis = 1), 
              ecolor='lightblue', capsize=10)
 plt.errorbar(np.arange(len(module_names)), grand_mean_noise.mean(axis = 1), yerr=stats.sem(grand_sem_noise, axis=1), fmt='o',
              ecolor='lightblue', capsize=10)
-             
-plt.title(f"Dissimilarity target-mask")
-plt.xlabel("Network depth", fontsize=15)
-plt.xticks(np.arange(len(module_names)), module_names, rotation = 45)
-plt.ylabel("Dissimilarity", fontsize=15)
-plt.legend(loc="upper right")
-plt.tight_layout()
-develop_filename = os.path.join(develop_dir, f'overview.png')
-fig.savefig(develop_filename)
-
-
-
-
-
-
-# ---------------------------- OLD CODE --------------------------------------------------
-
-# Plot natural masks develop plot 
-fig  = plt.figure()
-plt.plot(mean_natural_masks, marker='o', color='blue')
-plt.ylim([min_diss - 0.05, max_diss + 0.05])
-plt.errorbar(np.arange(len(module_names)), mean_natural_masks, yerr=sem_natural_masks, fmt='o', color='darkblue',
+plt.errorbar(np.arange(len(module_names)), grand_mean_lines.mean(axis = 1), yerr=stats.sem(grand_sem_lines, axis=1), fmt='o',
              ecolor='lightblue', capsize=10)
-plt.title(f"Dissimilarity target-mask: natural")
-plt.xlabel("Network depth", fontsize=15)
-plt.xticks(np.arange(len(module_names)), module_names, rotation = 45)
-plt.ylabel("Dissimilarity", fontsize=15)
-plt.tight_layout()
-develop_filename = os.path.join(develop_dir, f'categorical.png')
-fig.savefig(develop_filename)
-
-
-# Move to next info
-develop_index = develop_index + n_natural_masks
-
-# Create scrambled v1 develop plot
-scrambled_masks_v1 = [path for path in os.listdir(os.path.join(image_dir, '2_scrambled')) if path != '.DS_Store' and 'v1' in path]
-n_scrambled_masks_v1 = len(scrambled_masks_v1)
-scrambled_masks_v1_x = development_info[:, develop_index:develop_index + n_scrambled_masks_v1] 
-scramble_labels = ['p=0.1','p=0.2', 'p=0.3', 'p=0.4', 'p=0.5', 'p=1']
-means_scrambled_masks_v1 = np.zeros(shape=(5, len(scramble_labels)))
-sems_scrambled_masks_v1 = np.zeros(shape=(5, len(scramble_labels)))
-
-for i in range(len(scramble_labels)):
-    index = np.linspace(i, n_scrambled_masks_v1 - len(scramble_labels) + i, num=int(n_scrambled_masks_v1/len(scramble_labels))).astype(int)
-    means_scrambled_masks_v1[:, i] = scrambled_masks_v1_x[:, index].mean(axis=1)
-    sems_scrambled_masks_v1[:, i] = stats.sem(scrambled_masks_v1_x[:, index], axis=1)
-
-
-fig  = plt.figure()
-plt.plot(means_scrambled_masks_v1, marker='o')
-
-for i in range(sems_scrambled_masks_v1.shape[1]):
-    plt.errorbar(np.arange(len(module_names)), means_scrambled_masks_v1[:, i], yerr=sems_scrambled_masks_v1[:, i], fmt='o',
-             ecolor='lightblue', capsize=10)
-
-plt.ylim([min_diss - 0.05, max_diss + 0.05])
-plt.title(f"Dissimilarity target-mask: scrambled v1")
-plt.xlabel("Network depth", fontsize=15)
-plt.xticks(np.arange(len(module_names)), module_names, rotation = 45)
-plt.ylabel("Dissimilarity", fontsize=15)
-plt.legend(labels= scramble_labels, loc="upper right")
-plt.tight_layout()
-develop_filename = os.path.join(develop_dir, f'scrambled_v1.png')
-fig.savefig(develop_filename)
-
-# Move to next info
-develop_index = develop_index + n_scrambled_masks_v1
-
-# Create scrambled v2 develop plot
-scrambled_masks_v2 = [path for path in os.listdir(os.path.join(image_dir, '2_scrambled')) if path != '.DS_Store' and 'v2' in path]
-n_scrambled_masks_v2 = len(scrambled_masks_v2)
-scrambled_masks_v2_x = development_info[:, develop_index:develop_index + n_scrambled_masks_v2] 
-scramble_labels = ['p=0.1','p=0.2', 'p=0.3', 'p=0.4', 'p=0.5', 'p=1']
-means_scrambled_masks_v2 = np.zeros(shape=(5, len(scramble_labels)))
-sems_scrambled_masks_v2 = np.zeros(shape=(5, len(scramble_labels)))
-
-for i in range(len(scramble_labels)):
-    index = np.linspace(i, n_scrambled_masks_v2 - len(scramble_labels) + i, num=int(n_scrambled_masks_v2/len(scramble_labels))).astype(int)
-    means_scrambled_masks_v2[:, i] = scrambled_masks_v2_x[:, index].mean(axis=1)
-    sems_scrambled_masks_v2[:, i] = stats.sem(scrambled_masks_v2_x[:, index], axis=1)
-
-
-fig  = plt.figure()
-plt.plot(means_scrambled_masks_v2, marker='o')
-
-for i in range(sems_scrambled_masks_v2.shape[1]):
-    plt.errorbar(np.arange(len(module_names)), means_scrambled_masks_v2[:, i], yerr=sems_scrambled_masks_v2[:, i], fmt='o',
-             ecolor='lightblue', capsize=10)
-
-plt.ylim([min_diss - 0.05, max_diss + 0.05])         
-plt.title(f"Dissimilarity target-mask: scrambled v2")
-plt.xlabel("Network depth", fontsize=15)
-plt.xticks(np.arange(len(module_names)), module_names, rotation = 45)
-plt.ylabel("Dissimilarity", fontsize=15)
-plt.legend(labels= scramble_labels, loc="upper right")
-plt.tight_layout()
-develop_filename = os.path.join(develop_dir, f'scrambled_v2.png')
-fig.savefig(develop_filename)
-
-# Move to next info
-develop_index = develop_index + n_scrambled_masks_v2
-
-# Create noise mask develop plot
-noise_masks = [path for path in os.listdir(os.path.join(image_dir, '3_noise')) if path != '.DS_Store']
-n_noise_masks = len(noise_masks)
-noise_masks_x = development_info[:, develop_index:develop_index + n_noise_masks] 
-noise_labels = ['b=0','b=0.5', 'b=1', 'b=1.5', 'b=2', 'b=2.5']
-means_noise_masks = np.zeros(shape=(5, len(noise_labels)))
-sems_noise_masks = np.zeros(shape=(5, len(noise_labels)))
-
-for i in range(len(noise_labels)):
-    index = np.linspace(i, n_noise_masks - len(noise_labels) + i, num=int(n_noise_masks/len(noise_labels))).astype(int)
-    means_noise_masks[:, i] = noise_masks_x[:, index].mean(axis=1)
-    sems_noise_masks[:, i] = stats.sem(noise_masks_x[:, index], axis=1)
-
-fig  = plt.figure()
-plt.plot(means_noise_masks, marker='o')
-
-for i in range(sems_noise_masks.shape[1]):
-    plt.errorbar(np.arange(len(module_names)), means_noise_masks[:, i], yerr=sems_noise_masks[:, i], fmt='o',
-             ecolor='lightblue', capsize=10)
-
-plt.ylim([min_diss - 0.05, max_diss + 0.05])         
-plt.title(f"Dissimilarity target-mask: noise")
-plt.xlabel("Network depth", fontsize=15)
-plt.xticks(np.arange(len(module_names)), module_names, rotation = 45)
-plt.ylabel("Dissimilarity", fontsize=15)
-plt.legend(labels= noise_labels, loc="upper right")
-plt.tight_layout()
-develop_filename = os.path.join(develop_dir, f'noise.png')
-fig.savefig(develop_filename)
-
-# Move to next info
-develop_index = develop_index + n_noise_masks
-
-# Create geometric mask develop plot
-geometric_masks = [path for path in os.listdir(os.path.join(image_dir, '4_geometric')) if path != '.DS_Store']
-n_geometric_masks = len(geometric_masks)
-geometric_masks_x = development_info[:, develop_index:develop_index + n_geometric_masks] 
-geometric_labels = ['d=30', 'd=60', 'd=120', 'd=240']
-means_geometric_masks = np.zeros(shape=(5, len(geometric_labels)))
-sems_geometric_masks = np.zeros(shape=(5, len(geometric_labels)))
-
-for i in range(len(geometric_labels)):
-    index = np.linspace(i, n_geometric_masks - len(geometric_labels) + i, num=int(n_geometric_masks/len(geometric_labels))).astype(int)
-    means_geometric_masks[:, i] = geometric_masks_x[:, index].mean(axis=1)
-    sems_geometric_masks[:, i] = stats.sem(geometric_masks_x[:, index], axis=1)
-
-fig  = plt.figure()
-plt.plot(means_geometric_masks, marker='o')
-
-for i in range(sems_geometric_masks.shape[1]):
-    plt.errorbar(np.arange(len(module_names)), means_geometric_masks[:, i], yerr=sems_geometric_masks[:, i], fmt='o',
-             ecolor='lightblue', capsize=10)
-
-plt.ylim([min_diss - 0.05, max_diss + 0.05])        
-plt.title(f"Dissimilarity target-mask: geometric")
-plt.xlabel("Network depth", fontsize=15)
-plt.xticks(np.arange(len(module_names)), module_names, rotation = 45)
-plt.ylabel("Dissimilarity", fontsize=15)
-plt.legend(labels= geometric_labels, loc="upper right")
-plt.tight_layout()
-develop_filename = os.path.join(develop_dir, f'geometric.png')
-fig.savefig(develop_filename)
-
-# Mask type overview plot
-mean_scrambled_v1 = means_scrambled_masks_v1.mean(axis=1)
-mean_scrambled_v2 = means_scrambled_masks_v2.mean(axis=1)
-mean_noise= means_noise_masks.mean(axis=1)
-mean_geometric = means_geometric_masks.mean(axis=1)
-sem_scrambled_v1 = stats.sem(sems_scrambled_masks_v1, axis=1)
-sem_scrambled_v2 = stats.sem(sems_scrambled_masks_v2, axis=1)
-sem_noise = stats.sem(sems_noise_masks, axis=1)
-sem_geometric = stats.sem(sems_geometric_masks, axis=1)
-
-
-fig  = plt.figure()
-plt.plot(mean_natural_masks, marker='o', label='natural')
-plt.plot(mean_scrambled_v1, marker ='o', label='scrambled v1')
-plt.plot(mean_scrambled_v2, marker ='o', label='scrambled v2')
-plt.plot(mean_geometric, marker ='o', label='geometric')
-plt.plot(mean_noise, marker ='o', label='noise')
-plt.errorbar(np.arange(len(module_names)), mean_natural_masks, yerr=sem_natural_masks, fmt='o',
-             ecolor='lightblue', capsize=10)
-plt.errorbar(np.arange(len(module_names)), mean_scrambled_v1, yerr=sem_scrambled_v1, fmt='o',
-             ecolor='lightblue', capsize=10)
-plt.errorbar(np.arange(len(module_names)), mean_scrambled_v2, yerr=sem_scrambled_v2, fmt='o',
-             ecolor='lightblue', capsize=10)
-plt.errorbar(np.arange(len(module_names)), mean_geometric, yerr=sem_geometric, fmt='o',
-             ecolor='lightblue', capsize=10)
-plt.errorbar(np.arange(len(module_names)), mean_noise, yerr=sem_noise, fmt='o',
-             ecolor='lightblue', capsize=10)
+plt.errorbar(np.arange(len(module_names)), grand_mean_block.mean(axis = 1), yerr=stats.sem(grand_sem_block, axis=1), fmt='o',
+             ecolor='lightblue', capsize=10)            
              
 plt.title(f"Dissimilarity target-mask")
 plt.xlabel("Network depth", fontsize=15)
