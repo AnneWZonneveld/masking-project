@@ -785,12 +785,14 @@ def create_masks(things_concept = things_concept, image_paths = image_paths, mas
 
 
 
-def create_selection_csv(self, things_concept = things_concept, image_paths = image_paths, target_category = target_category):
+def create_selection_csv(things_concept = things_concept, image_paths = image_paths, target_category = target_category):
     """creates csv that contains info for all trials:
     - imageID (path to target image)
     - concept
     - category
     - mask (path to mask)"""
+
+    print(f'creating selection')
 
     experiment_dir = os.path.join(wd, 'stimuli', 'experiment')
     image_dir = os.path.join(experiment_dir, 'images')
@@ -805,6 +807,7 @@ def create_selection_csv(self, things_concept = things_concept, image_paths = im
     for category in target_category:
 
         concepts = things_concept['uniqueID'][things_concept['All Bottom-up Categories'].str.contains(category)].values.tolist()
+
 
         # pick nr_concepts
         concepts = random.sample(concepts, nr_concepts)
@@ -826,6 +829,8 @@ def create_selection_csv(self, things_concept = things_concept, image_paths = im
             for path in corrected_paths:
 
                 image_name = path[7:]
+
+                print(f"current target: {image_name}")
         
                 # Get image from image base and convert 
                 im_path = os.path.join(wd, 'image_base', path[7:])
