@@ -35,7 +35,7 @@ image_paths =  pd.read_csv(os.path.join(wd, "help_files", "image_paths.csv"), se
 target_category = ["vegetable", "insect", "clothing", "musical instrument"] 
 mask_category = ["bird", "furniture"] # masks should different category than target
 
-masks = ['natural', 'scrambled', 'noise', 'geometric', 'lines', ' blocked']
+masks = ['1_natural', '2_scrambled', '3_noise', '4_geometric', '5_lines', '6_blocked']
 
 
 nr_concepts = 10
@@ -51,9 +51,14 @@ def crop_image(image, root, image_dimensions=(480, 480)):
     - image_dimensions: dimensions to which the image has to be cropped
     """
 
-    cropped_dir = os.path.join(root, '1_natural')
-    if not os.path.exists(cropped_dir):
-            os.makedirs(cropped_dir)  
+    # check if expirment or DNN_analysis 
+    
+    if root.split('/')[-2] == 'DNN_analysis':
+        cropped_dir = os.path.join(root, '1_natural')
+        if not os.path.exists(cropped_dir):
+                os.makedirs(cropped_dir)  
+    else:
+        cropped_dir = root
 
     center_crop = T.CenterCrop(size=image_dimensions)(image[0])
 
@@ -561,15 +566,26 @@ def line_masks(n_masks, root, sz_x = 480, sz_y = 480, d = 200):
         
         return mask_paths
 
-def create_targets():
-    experiment_dir = os.path.join(wd, 'stimuli', 'experiment')
-    image_dir = os.path.join(experiment_dir, 'images')
+# def create_targets(paths):
+#     experiment_dir = os.path.join(wd, 'stimuli', 'experiment')
+#     image_dir = os.path.join(experiment_dir, 'images')
 
-    if not os.path.exists(image_dir):
-        os.makedirs(image_dir)   
+#     if not os.path.exists(image_dir):
+#         os.makedirs(image_dir)   
+
+#     for path in paths:
+
+#         image_name = path[7:]
+ 
+#         # Get image from image base and convert 
+#         im_path = os.path.join(wd, 'image_base', path[7:])
+#         im = Image.open(im_path).convert('RGB')
+
+#         # Crop
+#         cropped_path = crop_image(image = (im, image_name), root = image_dir)
 
 
-    pass
+#     pass
   
 
 def create_masks(things_concept = things_concept, image_paths = image_paths, mask_category=mask_category, type = 'experiment'):
@@ -747,7 +763,6 @@ def create_masks(things_concept = things_concept, image_paths = image_paths, mas
 
             # Save selected image at new location
             new_im_name = os.path.join(nat_mask_dir, image_name) # not whole picked path
-            cropped_im.save(new_im_name)
             natural_mask_paths.append(new_im_name)
 
         # natural mask
@@ -763,33 +778,36 @@ def create_masks(things_concept = things_concept, image_paths = image_paths, mas
         all_masks['noise'] = noise_masks(n = 20, root = mask_dir, image_dimensions= (480, 480), beta = 2)
 
         # geometric mask
-        all_masks['geometric'] = geometric_masks(sz_y = 480, sz_x = 480, n_masks = 20, root = mask_dir, d = 240)
+        all_masks['geometric'] = geometric_masks(sz_y = 480, sz_x = 480, n_masks = 20, root = mask_dir, d = 300)
 
         # line mask =
         all_masks['lines'] = line_masks(sz_y = 480, sz_x = 480, n_masks = 20, root = mask_dir, d = 300)
 
 
 
-
-
-
-
-def create_selection_csv(self, things_concept = things_concept, image_paths = image_paths, categories = categories):
+def create_selection_csv(self, things_concept = things_concept, image_paths = image_paths, target_category = target_category):
     """creates csv that contains info for all trials:
     - imageID (path to target image)
     - concept
     - category
     - mask (path to mask)"""
 
-    df = pd.DataFrame(columns= ['ImageID','concept','category', 'mask'])
+    experiment_dir = os.path.join(wd, 'stimuli', 'experiment')
+    image_dir = os.path.join(experiment_dir, 'images')
+    mask_dir = os.path.join(experiment_dir, 'masks')
+
+    if not os.path.exists(image_dir):
+        os.makedirs(image_dir)   
+
+    df = pd.DataFrame(columns= ['ImageID','concept','category', 'mask_type', 'mask_path'])
 
     # Find according image paths for categories
-    for category in categories:
+    for category in target_category:
 
-        concepts = things_concept['uniqueID'][things_concept['All Bottom-up Categories'].str.contains(category)]
+        concepts = things_concept['uniqueID'][things_concept['All Bottom-up Categories'].str.contains(category)].values.tolist()
 
         # pick nr_concepts
-        concepts = random.sample(concepts.values.tolist(), nr_concept)
+        concepts = random.sample(concepts, nr_concepts)
 
         for concept in concepts: 
             
@@ -803,25 +821,53 @@ def create_selection_csv(self, things_concept = things_concept, image_paths = im
 
             # pick nr_per_concept
             corrected_paths  = random.sample(corrected_paths, nr_per_concept)
-                
-            # Link masks
-            for mask in masks:
-                for i in range(nr_mask_instances):
-                    sub_df = pd.DataFrame(columns= ['ImageID','concept','category', 'mask'])
-                    sub_df['ImageID'] = np.array(corrected_paths)
-                    sub_df['concept'] = np.repeat(concept, len(corrected_paths))
-                    sub_df['category'] = np.repeat(category, len(corrected_paths))
-                    sub_df['mask'] = np.repeat(f"{mask}_{i}", len(corrected_paths)) # change to mask path
 
-                    for j in range(nr_repeats):
+            # Save cropped target images to correct path & loop through all target images
+            for path in corrected_paths:
+
+                image_name = path[7:]
+        
+                # Get image from image base and convert 
+                im_path = os.path.join(wd, 'image_base', path[7:])
+                im = Image.open(im_path).convert('RGB')
+
+                # Crop
+                cropped_path = crop_image(image = (im, image_name), root = image_dir)
+
+                # Link masks
+                for mask in masks:
+
+                    # find paths of all mask images of that type
+                    cur_mask_dir = os.path.join(mask_dir, mask)
+                    mask_paths = [path for path in os.listdir(cur_mask_dir) if path != '.DS_Store']
+
+                    for mask_path in mask_paths:
+
+                        info = [cropped_path, concept, category, mask, mask_path]
+                        repeated_info = [info for i in range(nr_repeats)]
+                        sub_df = pd.DataFrame(repeated_info, columns= ['ImageID','concept','category', 'mask_type', 'mask_path'])
+
+                        # Add to overall df
                         df = pd.concat([df, sub_df])
+
+            # # Link masks
+            # for mask in masks:
+            #     for i in range(nr_mask_instances):
+            #         sub_df = pd.DataFrame(columns= ['ImageID','concept','category', 'mask'])
+            #         sub_df['ImageID'] = np.array(corrected_paths)
+            #         sub_df['concept'] = np.repeat(concept, len(corrected_paths))
+            #         sub_df['category'] = np.repeat(category, len(corrected_paths))
+            #         sub_df['mask'] = np.repeat(f"{mask}_{i}", len(corrected_paths)) # change to mask path
+
+            #         for j in range(nr_repeats):
+            #             df = pd.concat([df, sub_df])
 
     # Export 
     df = df.reset_index()
     df = df.drop(columns=['index'])
-    df.to_csv(os.path.join(wd, 'selection_THINGS.csv'))  
+    df.to_csv(os.path.join(wd, 'help_files', 'selection_THINGS.csv'))  
     
 
 # Main
-create_masks(things_concept = things_concept, image_paths = image_paths, mask_category=mask_category)
-create_selection_csv(things_concept = things_concept, image_paths = image_paths, categories = categories)
+create_masks(things_concept = things_concept, image_paths = image_paths, mask_category=mask_category, type = 'experiment')
+create_selection_csv(things_concept = things_concept, image_paths = image_paths, target_category = target_category)
