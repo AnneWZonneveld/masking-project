@@ -32,24 +32,22 @@ wd = '/Users/AnneZonneveld/Documents/STAGE/masking-project/'
 things_concept = pd.read_csv(os.path.join(wd, "help_files", "things_concepts.tsv"), sep='\t', header=0)
 image_paths =  pd.read_csv(os.path.join(wd, "help_files", "image_paths.csv"), sep=',', header=None)
 
-# categories = ["vegetable", "fruit", "drink", "insect", "bird", 
-#             "clothing", "musical instrument", "body part", "plant", "sports equipment"] # use 5 
-
-categories = ["vegetable", "drink", "insect", "clothing", "musical instrument"] 
-mask_category = "body part" # masks should different category than target
+target_category = ["vegetable", "insect", "clothing", "musical instrument"] 
+mask_category = ["bird", "furniture"] # masks should different category than target
 
 masks = ['natural', 'scrambled', 'noise', 'geometric', 'lines', ' blocked']
 
-nr_concept = 5
-nr_per_concept = 5
-nr_mask_instances = 15
+
+nr_concepts = 10
+nr_per_concept = 4
+nr_mask_instances = 20
 nr_repeats = 3
 
 def crop_image(image, root, image_dimensions=(480, 480)):
     """
     Function to center crop images. Saves cropped images to file path
     
-    - images: list of tuples ---> (PIL image, image_path)
+    - images: list of tuples ---> (PIL image, image_name)
     - image_dimensions: dimensions to which the image has to be cropped
     """
 
@@ -218,7 +216,7 @@ def block_scrambled(n_masks, root, target_size = (480, 480), block_size=(120,120
     if not os.path.exists(mask_dir):
             os.makedirs(mask_dir)    
 
-    img_dir = os.path.join(wd, 'stimuli', 'cropped_images')
+    img_dir = os.path.join(root, '1_natural')
     img_files = [f for f in os.listdir(img_dir) if f.endswith('.jpg')]
     
     num_blocks = [int(np.ceil(target_size[0] / block_size[0])), int(np.ceil(target_size[1] /block_size[1]))]
@@ -276,7 +274,10 @@ def block_scrambled(n_masks, root, target_size = (480, 480), block_size=(120,120
     
     # create final ddf
     df = pd.concat([pd.DataFrame([i], columns= ['mask_name'] + col_names) for i in df_rows], ignore_index=True)
-    df_path = os.path.join(wd, 'help_files')   
+    df_path = os.path.join(wd, 'help_files', 'blocked_masks', root.split('/')[-2])   
+    if not os.path.exists(df_path):
+        os.makedirs(df_path)
+
     df.to_csv(os.path.join(df_path, f'block_masks_b{num_blocks}.csv'))
     
     return block_mask_paths
@@ -560,6 +561,15 @@ def line_masks(n_masks, root, sz_x = 480, sz_y = 480, d = 200):
         
         return mask_paths
 
+def create_targets():
+    experiment_dir = os.path.join(wd, 'stimuli', 'experiment')
+    image_dir = os.path.join(experiment_dir, 'images')
+
+    if not os.path.exists(image_dir):
+        os.makedirs(image_dir)   
+
+
+    pass
   
 
 def create_masks(things_concept = things_concept, image_paths = image_paths, mask_category=mask_category, type = 'experiment'):
@@ -586,8 +596,6 @@ def create_masks(things_concept = things_concept, image_paths = image_paths, mas
         if not os.path.exists(nat_mask_dir):
             os.makedirs(nat_mask_dir)   
 
-        # natural_mask_paths = []
-        # natural_mask_np_ims = []
         cropped_paths = []
         cropped_mask_np_ims = []
 
@@ -658,34 +666,112 @@ def create_masks(things_concept = things_concept, image_paths = image_paths, mas
         scrambled_p1 = scramble_images_v2(cropped_mask_np_ims[0:5], root = mask_dir, rescale = 'range', p = 1) 
 
         # noise mask
-        noise_mask_b0 = noise_masks(n = 5, image_dimensions= (480, 480), beta = 0)
-        noise_mask_b05 = noise_masks(n = 5, image_dimensions= (480, 480), beta = 0.5)
-        noise_mask_b1 = noise_masks(n = 5, image_dimensions= (480, 480), beta = 1)
-        noise_mask_b15 = noise_masks(n = 5, image_dimensions= (480, 480), beta = 1.5)
-        noise_mask_b2 = noise_masks(n = 5, image_dimensions= (480, 480), beta = 2)
-        noise_mask_b25 = noise_masks(n = 5, image_dimensions= (480, 480), beta = 2.5)
+        noise_mask_b0 = noise_masks(n = 5, root = mask_dir, image_dimensions= (480, 480), beta = 0)
+        noise_mask_b05 = noise_masks(n = 5, root = mask_dir, image_dimensions= (480, 480), beta = 0.5)
+        noise_mask_b1 = noise_masks(n = 5, root = mask_dir, image_dimensions= (480, 480), beta = 1)
+        noise_mask_b15 = noise_masks(n = 5, root = mask_dir, image_dimensions= (480, 480), beta = 1.5)
+        noise_mask_b2 = noise_masks(n = 5, root = mask_dir, image_dimensions= (480, 480), beta = 2)
+        noise_mask_b25 = noise_masks(n = 5, root = mask_dir, image_dimensions= (480, 480), beta = 2.5)
 
         # geometric mask
-        geometric_d30 = geometric_masks(sz_y = 480, sz_x = 480, n_masks = 5, d = 30)
-        geometric_d60 = geometric_masks(sz_y = 480, sz_x = 480, n_masks = 5, d = 60)
-        geometric_d120 = geometric_masks(sz_y = 480, sz_x = 480, n_masks = 5, d = 120)
-        geometric_d240 = geometric_masks(sz_y = 480, sz_x = 480, n_masks = 5, d = 240)
+        geometric_d30 = geometric_masks(sz_y = 480, sz_x = 480, n_masks = 5, root = mask_dir,  d = 30)
+        geometric_d60 = geometric_masks(sz_y = 480, sz_x = 480, n_masks = 5, root = mask_dir, d = 60)
+        geometric_d120 = geometric_masks(sz_y = 480, sz_x = 480, n_masks = 5, root = mask_dir, d = 120)
+        geometric_d240 = geometric_masks(sz_y = 480, sz_x = 480, n_masks = 5, root = mask_dir, d = 240)
 
         # line mask = 
-        lines_200 = line_masks(sz_y = 480, sz_x = 480, n_masks = 5, d = 200)
-        lines_300 = line_masks(sz_y = 480, sz_x = 480, n_masks = 5, d = 300)
-        lines_400 = line_masks(sz_y = 480, sz_x = 480, n_masks = 5, d = 400)
-        lines_500 = line_masks(sz_y = 480, sz_x = 480, n_masks = 5, d = 500)
+        lines_200 = line_masks(sz_y = 480, sz_x = 480, n_masks = 5, root = mask_dir, d = 200)
+        lines_300 = line_masks(sz_y = 480, sz_x = 480, n_masks = 5, root = mask_dir, d = 300)
+        lines_400 = line_masks(sz_y = 480, sz_x = 480, n_masks = 5, root = mask_dir, d = 400)
+        lines_500 = line_masks(sz_y = 480, sz_x = 480, n_masks = 5, root = mask_dir, d = 500)
 
         # block mask
-        blocked_tiny = block_scrambled(n_masks = 5, target_size = (480, 480), block_size= (30, 30))
-        blocked_small = block_scrambled(n_masks = 5, target_size = (480, 480), block_size= (60, 60))
-        blocked_medium = block_scrambled(n_masks = 5, target_size = (480, 480), block_size= (120, 120))
-        blocked_large  = block_scrambled(n_masks = 5, target_size = (480, 480), block_size= (240, 240))
-    
+        blocked_tiny = block_scrambled(n_masks = 5, root = mask_dir, target_size = (480, 480), block_size= (30, 30))
+        blocked_small = block_scrambled(n_masks = 5, root = mask_dir, target_size = (480, 480), block_size= (60, 60))
+        blocked_medium = block_scrambled(n_masks = 5, root = mask_dir, target_size = (480, 480), block_size= (120, 120))
+        blocked_large  = block_scrambled(n_masks = 5, root = mask_dir, target_size = (480, 480), block_size= (240, 240))
+
+
     if type == 'experiment':
-        # pick mask for experiment
-        pass
+
+        experiment_dir = os.path.join(wd, 'stimuli', 'experiment')
+        mask_dir = os.path.join(experiment_dir, 'masks')
+
+        nat_mask_dir = os.path.join(mask_dir, '1_natural')
+        if not os.path.exists(nat_mask_dir):
+            os.makedirs(nat_mask_dir)   
+          
+        # # Pick target concepts
+        # target_concepts = []
+        # for cat in target_category:
+        #     concepts = things_concept['uniqueID'][things_concept['All Bottom-up Categories'].str.contains(cat)]
+        #     concepts = random.sample(concepts.values.tolist(), nr_concepts)
+        #     target_concepts = target_concepts + concepts
+
+        natural_mask_paths = []
+        natural_mask_np = []
+
+        # Pick  natural mask concepts
+        mask_concepts = []
+        for cat in mask_category:
+            concepts = things_concept['uniqueID'][things_concept['All Bottom-up Categories'].str.contains(cat)]
+            concepts = random.sample(concepts.values.tolist(), nr_concepts)
+            mask_concepts = mask_concepts + concepts
+
+        # Pick target images per concept
+        for concept in mask_concepts:
+
+            paths = image_paths[image_paths.iloc[:, 0].str.contains(concept)].values.tolist()
+
+            # Correct for substrings
+            corrected_paths = []
+            for path in paths:
+                if path[0].split('/')[1] == concept:
+                    corrected_paths.append(path[0])
+
+            # Pick one image per concept
+            picked_path = random.choice(corrected_paths)[7:]
+            image_name = picked_path.split('/')[1]
+            
+            # Get image from image base and convert 
+            im_path = os.path.join(wd, 'image_base', picked_path)
+            im = Image.open(im_name).convert('RGB')
+
+            # Crop
+            cropped_path = crop_image(image = (im, image_name), root = mask_dir)
+            cropped_im = Image.open(cropped_path).convert('RGB')
+
+            # Save array
+            np_cropped = np.array(cropped_im)
+            natural_mask_np.append(np_cropped) 
+
+            # Save selected image at new location
+            new_im_name = os.path.join(nat_mask_dir, image_name) # not whole picked path
+            cropped_im.save(new_im_name)
+            natural_mask_paths.append(new_im_name)
+
+        # natural mask
+        all_masks['natural'] = natural_mask_paths
+
+        # block mask
+        blocked_medium = block_scrambled(n_masks = 20, root = mask_dir, target_size = (480, 480), block_size= (120, 120)) # check file path
+
+        # scamble mask
+        all_masks['scrambled'] = scramble_images_v1(natural_mask_np, root = mask_dir, rescale = 'range', p = 0.5) 
+
+        # noise mask
+        all_masks['noise'] = noise_masks(n = 20, root = mask_dir, image_dimensions= (480, 480), beta = 2)
+
+        # geometric mask
+        all_masks['geometric'] = geometric_masks(sz_y = 480, sz_x = 480, n_masks = 20, root = mask_dir, d = 240)
+
+        # line mask =
+        all_masks['lines'] = line_masks(sz_y = 480, sz_x = 480, n_masks = 20, root = mask_dir, d = 300)
+
+
+
+
+
 
 
 def create_selection_csv(self, things_concept = things_concept, image_paths = image_paths, categories = categories):
