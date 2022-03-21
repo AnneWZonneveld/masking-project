@@ -60,7 +60,10 @@ def crop_image(image, root, image_dimensions=(480, 480)):
     else:
         cropped_dir = root
 
-    center_crop = T.CenterCrop(size=image_dimensions)(image[0])
+    # center_crop = T.CenterCrop(size=image_dimensions)(image[0])
+    im = image[0]
+    center_crop = im.thumbnail(size=(sz_x, sz_y))
+
 
     # save created mask
     im_name = os.path.join(cropped_dir, image[1]) 
