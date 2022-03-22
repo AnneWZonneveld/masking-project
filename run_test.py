@@ -25,7 +25,7 @@ from psychopy.visual import GratingStim, TextStim, ImageStim, NoiseStim, DotStim
 
 logging.console.setLevel(logging.CRITICAL)
 
-wd = '/Users/AnneZonneveld/Documents/STAGE/task/'
+wd = '/Users/AnneZonneveld/Documents/STAGE/masking-project/'
 sys.path.append(os.path.join(wd, 'exptools'))
 
 import exptools
@@ -35,13 +35,21 @@ p = ['FA', 'MISS']
 
 fullscr = True
 # total_trials = {'practice': 10,
-# 				'actual': 30} # total should be dividable by 10 and 2 
+# 				'actual': 30} # total should be dividable by 10 and 2
+# 
 
-total_trials = 22500
-runs = 5
+
+trial_file = pd.read_csv(os.path.join(wd, 'help_files', 'selection_THINGS.csv'))   
+# total_trials = len(trial_file)
+total_trials  = 18000
+runs = 4
 nr_trials = int(total_trials / runs)
 block_length = 500
-nr_blocks = int(nr_trials/block_len)
+nr_blocks = int(nr_trials/block_length)
+
+target_categories = ["vegetable", "fruit", "drink", "insect", "bird", "clothing", "musical instrument", "body part", "plant", "sports equipment"]
+mask_categories = ["furniture"]
+
 
 class DetectTrial(Trial):
 	def __init__(self, parameters = {}, phase_durations = [], session=None, screen=None, ID=0, categories = []):
@@ -91,28 +99,30 @@ class DetectTrial(Trial):
 			intro_text = """During this experiment you will be presented with images of different categories. After image presentation, you will be asked whether the shown image belongs to a particular category. Press j (right) to answer yes or press f (left) to answer no. 
 \n If the instructions are clear, press space to continue."""
 
-		# Determine probe
+		# Determine probe --> higher category or concept?
 		if self.parameters['valid_cue'] == 1: 
 			probed_category = self.parameters['category']
 		else:
-			# pick random invalid category (or should categories be evenly misrepresented?)
-			probed_category = random.choice([i for i in self.categories != self.parameters['category']])  
+			# pick random invalid category (or should categories be evenly misrepresented?) + do not include mask categories
+			# probed_category = random.choice([i for i in self.categories != self.parameters['category']])  
+			probed_category = random.choice([i for i in target_categories != self.parameters['category']])  
 
 		probe_text = """Did you see : %s? \n  Y (press j)/N (press f)""" % (probed_category)	
-		practice_text = """You will first start with a practice block. During this block you will get immediate feedback. If your given answer
-		was correct, you will see a blue cue. If incorrect, you will see a red cue. \n Press space to start the practice block"""
+		# practice_text = """You will first start with a practice block. During this block you will get immediate feedback. If your given answer
+		# was correct, you will see a blue cue. If incorrect, you will see a red cue. \n Press space to start the practice block"""
 
-		self.message = visual.TextStim(self.screen, pos=[0,0],text= intro_text, color = (1.0, 1.0, 1.0), height=20)
-		self.image_stim = visual.ImageStim(self.screen, pos=[0,0], image = self.image[1])
-		self.probe = visual.TextStim(self.screen, pos=[0,0], text = probe_text, color = (1.0, 1.0, 1.0), height=20)
-		self.mask_stim = visual.ImageStim(self.screen, pos = [0,0], image = self.image[4])
+		self.message = TextStim(self.screen, pos=[0,0],text= intro_text, color = (1.0, 1.0, 1.0), height=20)
+		self.image_stim = ImageStim(self.screen, pos=[0,0], image = self.image[1])
+		self.probe = TextStim(self.screen, pos=[0,0], text = probe_text, color = (1.0, 1.0, 1.0), height=20)
+		self.mask_stim = ImageStim(self.screen, pos = [0,0], image = self.image[4])
 
 	
 	def draw(self):
 		# draw additional stimuli:
 
 		if self.phase == 0: # instruction / message
-			if self.ID == 0 or self.ID % self.session.block_length == 0 or self.ID == total_trials['practice'] + total_trials['actual']:
+			# if self.ID == 0 or self.ID % self.session.block_length == 0 or self.ID == total_trials['practice'] + total_trials['actual']:
+			if self.ID == 0 or self.ID % self.session.block_length == 0:
 				self.message.draw()
 			else:
 				self.fixation.draw()
@@ -197,17 +207,15 @@ class DetectTrial(Trial):
 
 				# For all trials that are not FTIB, skip phase 0
 				if self.ID != 0 and self.ID % self.session.block_length != 0:
-					if ( self.prestimulation_time  - self.start_time ) > self.phase_durations[0]:
+					if (self.prestimulation_time  - self.start_time ) > self.phase_durations[0]:
 						self.phase_forward()
 				
 			elif self.phase == 1:  # pre-stim cue; phase is timed
-
 				self.delay_1_time = clock.getTime()
 				if ( self.delay_1_time - self.prestimulation_time ) > self.phase_durations[1]:
 					self.phase_forward()
 
 			elif self.phase == 2:  # image presentation; phase is timed
-
 				self.image_stim_time = clock.getTime()				
 				if ( self.image_stim_time - self.delay_1_time ) > self.phase_durations[2]: 
 					self.phase_forward()
@@ -226,11 +234,11 @@ class DetectTrial(Trial):
 				self.answer_time = clock.getTime()
 				if self.parameters['answer'] != -1: #end phase when respond
 					# get reaction time
-					self.parameters['RT'] = self.answer_time - self.mask_stim_time
+					self.parameters['RT'] = self.answer_time - self.wait_time
 					self.stopped = True
 					self.stop()
 					return
-				if ( self.answer_time  - self.mask_time) > self.phase_durations[5]: #end phase after some time when no response
+				if ( self.answer_time  - self.wait_time) > self.phase_durations[5]: #end phase after some time when no response
 					self.parameters['RT'] = float("nan")
 					self.stopped = True
 					self.stop()
@@ -262,8 +270,8 @@ class DetectSession(EyelinkSession):
 		self.standard_parameters = {'run': self.index_number}
 
 		self.create_output_filename() # standard function?
-		self.load_THINGS()
-		self.determine_images()
+		# self.load_THINGS()
+		self.determine_trials()
 		self.create_yes_no_trials()
 	
 	# def create_output_filename(self):
@@ -273,12 +281,12 @@ class DetectSession(EyelinkSession):
 	# 	self.output_path = os.path.join(data_path, "sub_" + str(subject_nr))
 	# 	self.output_file = os.path.join(data_path, "sub_" + str(subject_nr), "run_" + str(self.index_number))
 
-	def load_THINGS(self):
-		self.THINGS_data = pd.read_csv(os.path.join(wd, "help_files", "selection_THINGS.csv" ), sep=',', header=0)
-		self.categories = pd.unique(self.THINGS_data['category'])
-		self.concepts = pd.unique(self.THINGS_data['concept'])
+	# def load_THINGS(self):
+	# 	self.THINGS_data = pd.read_csv(os.path.join(wd, "help_files", "selection_THINGS.csv" ), sep=',', header=0)
+	# 	self.categories = pd.unique(self.THINGS_data['category'])
+	# 	self.concepts = pd.unique(self.THINGS_data['concept'])
 
-	def determine_images(self):
+	def determine_trials(self):
 		# self.images = []
 		# self.nr_per_cat = int(total_trials['actual'] / len(self.categories)) # or self.nr_trials
 		# for category in self.categories:
@@ -289,57 +297,25 @@ class DetectSession(EyelinkSession):
 		self.output_path = os.path.join(wd, "data", "sub_" + str(subject_nr))
 
 		# deterimine indexes of previous runs
-		filter = np.ones(len(self.THINGS_data), dtype=bool)
+		filter = np.ones(total_trials, dtype=bool)
 		if self.index_number > 1:
 			previous_index = pd.read_csv(os.path.join(self.output_path, "previous_trials.csv"))
 			for i in previous_index['index']:
 				filter[i] = False
 
-		# pick images for current run
-		self.all_images_index = np.arange(len(self.THINGS_data))
-		self.available_images_index = self.all_images_index[filter]
-		self.current_images_index = random.sample(self.available_images_index.tolist(), nr_trials)
+		# pick trials for current run
+		self.all_trials_index = np.arange(total_trials)
+		self.available_trials_index = self.all_trials_index[filter]
+		self.current_trials_index = random.sample(self.available_trials_index.tolist(), nr_trials)
 		
 		# save chosen indices to be run in previous_trials.csv --> maybe later? 
-		df = pd.DataFrame(self.current_images_index, columns=['index'])
+		df = pd.DataFrame(self.current_trials_index, columns=['index'])
 		if self.index_number > 1:
 			df = df.append(previous_index, ignore_index=True)
 
 		# export 
 		df.to_csv(os.path.join(self.output_path, 'previous_trials.csv')) 
 
-
-	# def determine_masks(self, mask_options): # mask options should be entered in in main and given to session
-
-	# 	self.images_masked = []
-
-	# 	for category in self.images: # loop over categories
-	# 		for image in category: #loop over images per category
-				
-	# 			# pick random mask type --> should not be random
-	# 			mask_type = np.random.choice(mask_options)
-
-	# 			if mask_type == 'natural':
-	# 				other_categories = [i for i in categories if i != image[3]]
-	# 				mask_category = np.random.choice(other_categories)
-	# 				mask = random.choice(self.THINGS_data[self.THINGS_data['category'] == mask_category].values.tolist())[1]
-	# 			elif mask_type == 'phase_scramble':
-	# 				# function that takes target_image path, creates phase scrambled image and outputs according path
-	# 				mask = 'phase_scrambeled_path'				
-	# 			elif mask_type == '1/f':
-	# 				# mask = '1/f' mask filepath
-	# 				mask = '1/f file path'	
-	# 			elif mask_type == 'mondriaan':
-	# 				# mask = 'mondriaan mask filepath
-	# 				mask = 'mondriaan_path'	
-	# 			else:
-	# 				mask = 'no'
-
-	# 			# link image to mask
-	# 			image_masked = np.append(image, mask)
-	# 			self.images_masked.append(image_masked)
-
-	# 	self.images_masked = np.array(self.images_masked)
 
 	def create_yes_no_trials(self):
 		"""creates trials for yes/no runs"""
@@ -356,18 +332,19 @@ class DetectSession(EyelinkSession):
 		for i in range(int(self.nr_trials/self.valid_cue.shape[0])):
 			for j in range(self.valid_cue.shape[0]):
 
-				# Pick image
-				image_index = self.current_images_index[trial_counter]
-				image_info = self.THINGS_data.iloc[image_index]
+				# Pick trial
+				trial_index = self.current_trials_index[trial_counter]
+				trial_info = trial_file.iloc[trial_index]
 
 				# Update params with all trial info
 				params = self.standard_parameters
 				params.update({ 'valid_cue': self.valid_cue[j],
-								'index': image_info[0],
-								'image': image_info['ImageID'],
-								'concept': image_info['concept'],
-								'category': image_info['category'],
-								'mask': image_info['mask']
+								'index': trial_info[0],
+								'target_path': trial_info['ImageID'],
+								'concept': trial_info['concept'],
+								'category': trial_info['category'],
+								'mask_type' : trial_info['mask_type']
+								'mask_path': trial_info['mask']
 				}) 
 
 				self.trial_parameters_and_durs.append([params.copy(), np.array(phase_durs)])
@@ -379,7 +356,7 @@ class DetectSession(EyelinkSession):
 
 		# print params:
 		print("number trials: %i." % trial_counter)
-		if trial_counter != NR_TRIALS:
+		if trial_counter != nr_trials:
 			raise ValueError('number of created trials does not match pre-defined number of trials')
 
 		print("total duration: %.2f min." % (self.total_duration / 60.0))
