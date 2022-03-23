@@ -14,7 +14,7 @@ import subprocess
 import pickle, datetime, time
 import numpy as np
 from math import *
-#from IPython import embed as shell
+from IPython import embed as shell
 import shutil
 import glob
 import pandas as pd 
@@ -30,6 +30,11 @@ sys.path.append(os.path.join(wd, 'exptools'))
 
 import exptools
 from exptools.core.trial import Trial
+from exptools.core.session import Session
+
+# import exptools2
+# from exptools2.core.trial import Trial
+# from exptools2.core.session import Session
 
 p = ['FA', 'MISS']
 
@@ -112,9 +117,9 @@ class DetectTrial(Trial):
 		# was correct, you will see a blue cue. If incorrect, you will see a red cue. \n Press space to start the practice block"""
 
 		self.message = TextStim(self.screen, pos=[0,0],text= intro_text, color = (1.0, 1.0, 1.0), height=20)
-		self.image_stim = ImageStim(self.screen, pos=[0,0], image = self.image[1])
+		self.image_stim = ImageStim(self.screen, pos=[0,0], image = self.parameters['target_path'])
 		self.probe = TextStim(self.screen, pos=[0,0], text = probe_text, color = (1.0, 1.0, 1.0), height=20)
-		self.mask_stim = ImageStim(self.screen, pos = [0,0], image = self.image[4])
+		self.mask_stim = ImageStim(self.screen, pos = [0,0], image = self.parameters['mask_path'])
 
 	
 	def draw(self):
@@ -260,10 +265,10 @@ class DetectTrial(Trial):
 		self.stop()
 
 
-class DetectSession(EyelinkSession):
+class DetectSession(Session):
 	def __init__(self, subject_nr, nr_trials, block_length, index_number=1):
 		super(DetectSession, self).__init__(subject_nr, index_number)
-		self.create_screen(  size=[1920, 1080],full_screen = fullscr, background_color = (0.5, 0.5, 0.5), physical_screen_distance = 80, engine = 'pygaze') 
+		self.create_screen(size=[1920, 1080],full_screen = fullscr, background_color = (0.5, 0.5, 0.5), physical_screen_distance = 80, engine = 'pygaze') 
 		self.block_length = block_length
 		self.nr_trials = nr_trials
 		self.index_number = index_number
@@ -294,7 +299,10 @@ class DetectSession(EyelinkSession):
 		# 	self.images.append(selection)
 		# self.images = np.array(self.images)
 
+
 		self.output_path = os.path.join(wd, "data", "sub_" + str(subject_nr))
+		if not os.path.exists(self.output_path):
+			os.makedirs(self.output_path)  
 
 		# deterimine indexes of previous runs
 		filter = np.ones(total_trials, dtype=bool)
@@ -314,6 +322,7 @@ class DetectSession(EyelinkSession):
 			df = df.append(previous_index, ignore_index=True)
 
 		# export 
+		# fix export
 		df.to_csv(os.path.join(self.output_path, 'previous_trials.csv')) 
 
 
@@ -343,7 +352,7 @@ class DetectSession(EyelinkSession):
 								'target_path': trial_info['ImageID'],
 								'concept': trial_info['concept'],
 								'category': trial_info['category'],
-								'mask_type' : trial_info['mask_type']
+								'mask_type' : trial_info['mask_type'],
 								'mask_path': trial_info['mask']
 				}) 
 
@@ -403,7 +412,8 @@ def main(subject_nr, index_number, nr_trials):
 
 if __name__ == '__main__':
 	# Store info about the experiment session
-	subject_nr = raw_input('Participant nr: ') 
-	index_number = int(raw_input('Which run: ')) 
+	subject_nr = str(input('Participant nr: '))
+
+	index_number = int(input('Which run: ')) 
 
 	main(subject_nr = subject_nr, index_number=index_number, nr_trials=nr_trials)

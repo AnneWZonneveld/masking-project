@@ -146,7 +146,7 @@ class Session(object):
         if not os.path.isdir(data_directory):
             os.mkdir(data_directory)
             
-        self.output_file = os.path.join(data_directory, self.subject_initials + '_' + str(self.index_number) + '_' + opfn )
+        self.output_file = os.path.join(data_directory, str(self.subject_initials) + '_' + str(self.index_number) + '_' + opfn )
     
     def open_input_file(self):
         """
