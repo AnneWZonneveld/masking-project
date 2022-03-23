@@ -38,7 +38,9 @@ from exptools.core.session import Session
 
 p = ['FA', 'MISS']
 
-fullscr = True
+fullscr = False
+# screen_size  = [1920, 1080]
+screen_size  = [800, 600]
 # total_trials = {'practice': 10,
 # 				'actual': 30} # total should be dividable by 10 and 2
 # 
@@ -268,7 +270,7 @@ class DetectTrial(Trial):
 class DetectSession(Session):
 	def __init__(self, subject_nr, nr_trials, block_length, index_number=1):
 		super(DetectSession, self).__init__(subject_nr, index_number)
-		self.create_screen(size=[1920, 1080],full_screen = fullscr, background_color = (0.5, 0.5, 0.5), physical_screen_distance = 80, engine = 'pygaze') 
+		self.create_screen(size=screen_size,full_screen = fullscr, background_color = (0.5, 0.5, 0.5), physical_screen_distance = 80, engine = 'pygaze') 
 		self.block_length = block_length
 		self.nr_trials = nr_trials
 		self.index_number = index_number
