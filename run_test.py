@@ -7,8 +7,10 @@ Created by Anne Zonneveld, Feb 2022
 
 import os, sys, datetime
 
-PYTHONPATH = '/opt/anaconda3/envs/psychopy/lib/python3.6'
-sys.path.append('/opt/anaconda3/envs/psychopy/lib/python3.6')
+# PYTHONPATH = '/opt/anaconda3/envs/psychopy/lib/python3.6/site-packages'
+# sys.path.append('/opt/anaconda3/envs/psychopy/lib/python3.6/')
+# PYTHONPATH = '/opt/anaconda3/envs/psychopy/lib/python3.6'
+# sys.path.append('/opt/anaconda3/envs/psychopy/lib/python3.6')
 
 import subprocess
 import pickle, datetime, time
@@ -39,23 +41,27 @@ from exptools.core.session import Session
 p = ['FA', 'MISS']
 
 fullscr = False
-# screen_size  = [1920, 1080]
-screen_size  = [800, 600]
-# total_trials = {'practice': 10,
-# 				'actual': 30} # total should be dividable by 10 and 2
-# 
+screen_size  = [1920, 1080]
 
 
 trial_file = pd.read_csv(os.path.join(wd, 'help_files', 'selection_THINGS.csv'))   
-# total_trials = len(trial_file)
-total_trials  = 18000
-runs = 4
+# total_trials = len(trial_file) # 4860
+# total_trials = 4860
+# runs = 4
+# nr_trials = int(total_trials / runs)
+# block_length = 243 #divideable of total_trials
+# nr_blocks = int(nr_trials/block_length)
+
+total_trials = 40
+runs = 2
 nr_trials = int(total_trials / runs)
-block_length = 500
+block_length = 5 #divideable of total_trials
 nr_blocks = int(nr_trials/block_length)
 
+target_categories = pd.unique(trial_file['category']).tolist()
+target_concepts = pd.unique(trial_file['concept']).tolist()
+
 target_categories = ["vegetable", "fruit", "drink", "insect", "bird", "clothing", "musical instrument", "body part", "plant", "sports equipment"]
-mask_categories = ["furniture"]
 
 
 class DetectTrial(Trial):
@@ -106,22 +112,36 @@ class DetectTrial(Trial):
 			intro_text = """During this experiment you will be presented with images of different categories. After image presentation, you will be asked whether the shown image belongs to a particular category. Press j (right) to answer yes or press f (left) to answer no. 
 \n If the instructions are clear, press space to continue."""
 
-		# Determine probe --> higher category or concept?
+		# Determine probe --> change to concepts
 		if self.parameters['valid_cue'] == 1: 
-			probed_category = self.parameters['category']
+			probed_concept = self.parameters['concept']
 		else:
-			# pick random invalid category (or should categories be evenly misrepresented?) + do not include mask categories
-			# probed_category = random.choice([i for i in self.categories != self.parameters['category']])  
-			probed_category = random.choice([i for i in target_categories != self.parameters['category']])  
+			other_concepts = []
+			for concept in target_concepts:
+				if concept != self.parameters['concept']:
+					other_concepts.append(concept)
+			probed_concept = random.choice(other_concepts)  
 
-		probe_text = """Did you see : %s? \n  Y (press j)/N (press f)""" % (probed_category)	
-		# practice_text = """You will first start with a practice block. During this block you will get immediate feedback. If your given answer
-		# was correct, you will see a blue cue. If incorrect, you will see a red cue. \n Press space to start the practice block"""
+	
+		probe_text = """Did you see : '%s'? \n  NO (press f) / YES (press j)""" % (probed_concept)
+		outro_text = """This is the end of today's session. Thank you for participating!"""	
 
 		self.message = TextStim(self.screen, pos=[0,0],text= intro_text, color = (1.0, 1.0, 1.0), height=20)
 		self.image_stim = ImageStim(self.screen, pos=[0,0], image = self.parameters['target_path'])
 		self.probe = TextStim(self.screen, pos=[0,0], text = probe_text, color = (1.0, 1.0, 1.0), height=20)
 		self.mask_stim = ImageStim(self.screen, pos = [0,0], image = self.parameters['mask_path'])
+		self.outro = TextStim(self.screen, pos=[0,0], text = outro_text, color = (1.0, 1.0, 1.0), height=20)
+
+
+		# test 
+		# temp_target_path = os.path.join(wd, 'stimuli', 'DNN_analysis', 'images', 'aardvark_02s.jpg')
+		# temp_mask_path = os.path.join(wd, 'stimuli', 'DNN_analysis', 'masks', '2_scrambled', 'v1_scrambled_0_p0.1.png')
+		# self.message = TextStim(self.screen, pos=[0,0],text= intro_text, color = (1.0, 1.0, 1.0), height=20)
+		# self.image_stim = ImageStim(self.screen, pos=[0,0], image = temp_target_path)
+		# self.probe = TextStim(self.screen, pos=[0,0], text = probe_text, color = (1.0, 1.0, 1.0), height=20)
+		# self.outro = TextStim(self.screen, pos=[0,0], text = outro_text, color = (1.0, 1.0, 1.0), height=20)
+		# self.mask_stim = ImageStim(self.screen, pos = [0,0], image = temp_mask_path)
+
 
 	
 	def draw(self):
@@ -145,10 +165,17 @@ class DetectTrial(Trial):
 			self.mask_stim.draw()
 			
 		if self.phase == 4: # empty screen
-			pass
+			self.fixation.draw()
 		
 		if self.phase == 5: # prompt
 			self.probe.draw()
+
+		if self.phase == 6: # outro
+			# if self.ID == (self.session.nr_trials - 1):
+			# 	self.outro.draw()
+			# else:
+			# 	self.fixation.draw()
+			self.outro.draw()
 
 		# elif self.phase == 6: # feedback / only in practice block
 		# 	if self.ID <= total_trials['practice']:
@@ -180,6 +207,10 @@ class DetectTrial(Trial):
 						[99, clock.getTime() - self.start_time])
 					if self.phase == 0:
 						self.phase_forward()
+					if self.phase == 6:
+						self.stopped = True
+						self.session.stopped = True
+						print("End of session")
 
 				elif ev == 'j':
 					self.events.append([1,clock.getTime()-self.start_time])
@@ -189,7 +220,8 @@ class DetectTrial(Trial):
 							self.parameters['correct'] = 1
 						else:
 							self.parameters['correct'] = 0
-						self.phase_forward()
+						# self.phase_forward()
+						# self.stop()
 
 				elif ev == 'f':
 					self.events.append([1,clock.getTime()-self.start_time])
@@ -199,7 +231,8 @@ class DetectTrial(Trial):
 							self.parameters['correct'] = 0 
 						else:
 							self.parameters['correct'] = 1
-						self.phase_forward()
+						# self.phase_forward()
+						# self.stop()
 
 			super(DetectTrial, self).key_event( event )
 
@@ -230,26 +263,48 @@ class DetectTrial(Trial):
 			elif self.phase == 3: # mask presentation; phase is timed
 				self.mask_stim_time = clock.getTime()
 				if (self.mask_stim_time - self.image_stim_time) > self.phase_durations[3]:
-					self.phase_forward
+					self.phase_forward()
 
 			elif self.phase == 4: # wait; blank screen; phase timed
 				self.wait_time = clock.getTime()
 				if (self.wait_time - self.mask_stim_time) > self.phase_durations[4]:
-					self.phase_forward
+					self.phase_forward()
+
+			# elif self.phase == 5:   # Decision interval; phase is timed, but aborted at response
+			# 	self.answer_time = clock.getTime()
+			# 	if self.parameters['answer'] != -1: #end phase when respond
+			# 		# get reaction time
+			# 		self.parameters['RT'] = self.answer_time - self.wait_time
+			# 		self.stopped = True
+			# 		self.stop()
+			# 		return
+			# 	if ( self.answer_time  - self.wait_time) > self.phase_durations[5]: #end phase after some time when no response
+			# 		self.parameters['RT'] = float("nan")
+			# 		self.stopped = True
+			# 		self.stop()
+			# 		return
 
 			elif self.phase == 5:   # Decision interval; phase is timed, but aborted at response
 				self.answer_time = clock.getTime()
+
 				if self.parameters['answer'] != -1: #end phase when respond
 					# get reaction time
 					self.parameters['RT'] = self.answer_time - self.wait_time
-					self.stopped = True
-					self.stop()
-					return
+					if self.ID != (self.session.nr_trials - 1):
+						self.stopped = True
+						self.stop()
+						return
+					else:
+						self.phase_forward()
+
 				if ( self.answer_time  - self.wait_time) > self.phase_durations[5]: #end phase after some time when no response
 					self.parameters['RT'] = float("nan")
-					self.stopped = True
-					self.stop()
-					return
+					if self.ID != (self.session.nr_trials - 1):
+						self.stopped = True
+						self.stop()
+						return
+					else:
+						self.phase_forward()
 
 			# elif self.phase == 6:				# Feedback; only pratice block
 			# 	self.delay_4_time = clock.getTime()	
@@ -277,6 +332,7 @@ class DetectSession(Session):
 		self.standard_parameters = {'run': self.index_number}
 
 		self.create_output_filename() # standard function?
+
 		# self.load_THINGS()
 		self.determine_trials()
 		self.create_yes_no_trials()
@@ -302,14 +358,14 @@ class DetectSession(Session):
 		# self.images = np.array(self.images)
 
 
-		self.output_path = os.path.join(wd, "data", "sub_" + str(subject_nr))
+		self.output_path = os.path.join(wd, "data", "previous_trials")
 		if not os.path.exists(self.output_path):
 			os.makedirs(self.output_path)  
 
 		# deterimine indexes of previous runs
 		filter = np.ones(total_trials, dtype=bool)
 		if self.index_number > 1:
-			previous_index = pd.read_csv(os.path.join(self.output_path, "previous_trials.csv"))
+			previous_index = pd.read_csv(os.path.join(self.output_path, f'sub_{subject_nr}.csv'))
 			for i in previous_index['index']:
 				filter[i] = False
 
@@ -324,13 +380,12 @@ class DetectSession(Session):
 			df = df.append(previous_index, ignore_index=True)
 
 		# export 
-		# fix export
-		df.to_csv(os.path.join(self.output_path, 'previous_trials.csv')) 
+		df.to_csv(os.path.join(self.output_path, f'sub_{subject_nr}.csv'))
 
 
 	def create_yes_no_trials(self):
 		"""creates trials for yes/no runs"""
-					
+
 		# Create yes-no trials in nested for-loop:
 		self.valid_cue = np.array([0,1])
 		self.trial_parameters_and_durs = []    
@@ -355,7 +410,7 @@ class DetectSession(Session):
 								'concept': trial_info['concept'],
 								'category': trial_info['category'],
 								'mask_type' : trial_info['mask_type'],
-								'mask_path': trial_info['mask']
+								'mask_path': trial_info['mask_path']
 				}) 
 
 				self.trial_parameters_and_durs.append([params.copy(), np.array(phase_durs)])
@@ -363,7 +418,7 @@ class DetectSession(Session):
 				trial_counter += 1
 
 		# self.run_order = np.argsort(np.random.rand(len(self.trial_parameters_and_durs))) # double random
-		self.run_order = np.array(self.current_images_index)
+		# self.run_order = np.array(self.current_trials_index)
 
 		# print params:
 		print("number trials: %i." % trial_counter)
@@ -384,7 +439,8 @@ class DetectSession(Session):
 
 		while trial_counter < self.nr_trials:
 			print("trial count: %i" %(trial_counter))
-			this_trial = DetectTrial(parameters=self.trial_parameters_and_durs[self.run_order[trial_counter]][0], phase_durations=self.trial_parameters_and_durs[self.run_order[trial_counter]][1], session=self, screen=self.screen, ID=trial_counter, categories = self.categories)
+			# this_trial = DetectTrial(parameters=self.trial_parameters_and_durs[self.run_order[trial_counter]][0], phase_durations=self.trial_parameters_and_durs[self.run_order[trial_counter]][1], session=self, screen=self.screen, ID=trial_counter, categories = target_categories)
+			this_trial = DetectTrial(parameters=self.trial_parameters_and_durs[trial_counter][0], phase_durations=self.trial_parameters_and_durs[trial_counter][1], session=self, screen=self.screen, ID=trial_counter, categories = target_categories)
 			this_trial.run()	
 
 			self.corrects.append(this_trial.parameters['correct'])

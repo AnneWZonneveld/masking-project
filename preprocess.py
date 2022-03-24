@@ -31,16 +31,22 @@ wd = '/Users/AnneZonneveld/Documents/STAGE/masking-project/'
 
 things_concept = pd.read_csv(os.path.join(wd, "help_files", "things_concepts.tsv"), sep='\t', header=0)
 image_paths =  pd.read_csv(os.path.join(wd, "help_files", "image_paths.csv"), sep=',', header=None)
+concept_selection = pd.read_csv(os.path.join(wd, "help_files", "concept_selection.csv"), sep=';', header=0)
+target_concepts = pd.unique(concept_selection['concept'])
+target_categories = pd.unique(concept_selection['category'])
 
 target_category = ["vegetable", "fruit", "drink", "insect", "bird", "clothing", "musical instrument", "body part", "plant", "sports equipment"]
 mask_category = ["bird", "furniture"] # masks should different category than target
 
 masks = ['1_natural', '2_scrambled', '3_noise', '4_geometric', '5_lines', '6_blocked']
 
-nr_concepts = 30
-nr_per_concept = 4
+nr_concepts = 2
+nr_per_concept = 6
 nr_mask_instances = 1
 nr_repeats = 3
+
+
+
 
 def crop_image(image, root, image_dimensions=(480, 480)):
     """
@@ -176,7 +182,7 @@ def scramble_images_v2(images, root,  p = 0.5, rescale = 'off'):
 
         # rescale to 0-1 values
         image = images[i][0]
-        image = images/255
+        image = image/255
         
         imtype = type(image)
         imSize = image.shape
@@ -700,6 +706,7 @@ def create_masks(things_concept = things_concept, image_paths = image_paths, mas
 
         # Pick  natural mask concepts
         mask_concepts = []
+
         for cat in mask_category:
             concepts = things_concept['uniqueID'][things_concept['All Bottom-up Categories'].str.contains(cat)]
             concepts = random.sample(concepts.values.tolist(), nr_concepts)
@@ -818,8 +825,15 @@ def create_selection_csv(things_concept = things_concept, image_paths = image_pa
                     cur_mask_dir = os.path.join(mask_dir, mask)
                     mask_paths = [path for path in os.listdir(cur_mask_dir) if path != '.DS_Store']
 
-                    for mask_path in mask_paths:
+                for mask in masks:
 
+                    # find paths of all mask images of that type
+                    cur_mask_dir = os.path.join(mask_dir, mask)
+                    mask_paths = [path for path in os.listdir(cur_mask_dir) if path != '.DS_Store']
+
+                    for mask_path in mask_paths:
+                    
+                        mask_path = os.path.join(cur_mask_dir, mask_path)
                         info = [cropped_path, concept, category, mask, mask_path]
                         repeated_info = [info for i in range(nr_repeats)]
                         sub_df = pd.DataFrame(repeated_info, columns= ['ImageID','concept','category', 'mask_type', 'mask_path'])
@@ -836,5 +850,5 @@ def create_selection_csv(things_concept = things_concept, image_paths = image_pa
 
 # Main
 # create_masks(things_concept = things_concept, image_paths = image_paths, mask_category=mask_category, type = 'experiment')
-# create_selection_csv()
-create_masks(things_concept = things_concept, image_paths = image_paths, mask_category=mask_category, type = 'DNN_analysis')
+create_selection_csv()
+# create_masks(things_concept = things_concept, image_paths = image_paths, mask_category=mask_category, type = 'DNN_analysis')
