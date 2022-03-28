@@ -61,7 +61,7 @@ nr_blocks = int(nr_trials/block_length)
 target_categories = pd.unique(trial_file['category']).tolist()
 target_concepts = pd.unique(trial_file['concept']).tolist()
 
-target_categories = ["vegetable", "fruit", "drink", "insect", "bird", "clothing", "musical instrument", "body part", "plant", "sports equipment"]
+# target_categories = ["vegetable", "fruit", "drink", "insect", "bird", "clothing", "musical instrument", "body part", "plant", "sports equipment"]
 
 
 class DetectTrial(Trial):
@@ -106,13 +106,11 @@ class DetectTrial(Trial):
 			misses = (np.array(self.session.answers)[-self.session.block_length:]==-1).sum()
 			intro_text = """\nBlock %i: %i%% correct!\n You missed %i out of %i trials. \nPress space to continue.""" % (self.block,perf, misses , block_length)
 			print("perf: %i" %(perf))
-		# elif self.ID == total_trials['practice'] + total_trials['actual']: #?
-		# 	intro_text = """You have reached the end of the experiment. Thank you for participating."""
 		else:
 			intro_text = """During this experiment you will be presented with images of different categories. After image presentation, you will be asked whether the shown image belongs to a particular category. Press j (right) to answer yes or press f (left) to answer no. 
 \n If the instructions are clear, press space to continue."""
 
-		# Determine probe --> change to concepts
+		# Determine probe 
 		if self.parameters['valid_cue'] == 1: 
 			probed_concept = self.parameters['concept']
 		else:
@@ -121,8 +119,10 @@ class DetectTrial(Trial):
 				if concept != self.parameters['concept']:
 					other_concepts.append(concept)
 			probed_concept = random.choice(other_concepts)  
+		
+		probed_concept = probed_concept.replace('_', ' ')
 
-	
+
 		probe_text = """Did you see : '%s'? \n  NO (press f) / YES (press j)""" % (probed_concept)
 		outro_text = """This is the end of today's session. Thank you for participating!"""	
 
@@ -215,24 +215,29 @@ class DetectTrial(Trial):
 				elif ev == 'j':
 					self.events.append([1,clock.getTime()-self.start_time])
 					if self.phase == 5:
+						# yes 
 						self.parameters.update({'answer':1})
 						if self.parameters['valid_cue'] == self.parameters['answer']:
 							self.parameters['correct'] = 1
 						else:
 							self.parameters['correct'] = 0
-						# self.phase_forward()
-						# self.stop()
+						self.parameters['RT'] = self.answer_time - self.wait_time
+						self.stopped = True
+						self.stop()
+
 
 				elif ev == 'f':
 					self.events.append([1,clock.getTime()-self.start_time])
 					if self.phase == 5:
+						# no
 						self.parameters.update({'answer':0})
 						if self.parameters['valid_cue'] == self.parameters['answer']:
-							self.parameters['correct'] = 0 
-						else:
 							self.parameters['correct'] = 1
-						# self.phase_forward()
-						# self.stop()
+						else:
+							self.parameters['correct'] = 0
+						self.parameters['RT'] = self.answer_time - self.wait_time
+						self.stopped = True
+						self.stop()
 
 			super(DetectTrial, self).key_event( event )
 
@@ -287,15 +292,15 @@ class DetectTrial(Trial):
 			elif self.phase == 5:   # Decision interval; phase is timed, but aborted at response
 				self.answer_time = clock.getTime()
 
-				if self.parameters['answer'] != -1: #end phase when respond
-					# get reaction time
-					self.parameters['RT'] = self.answer_time - self.wait_time
-					if self.ID != (self.session.nr_trials - 1):
-						self.stopped = True
-						self.stop()
-						return
-					else:
-						self.phase_forward()
+				# if self.parameters['answer'] != -1: #end phase when respond
+				# 	# get reaction time
+				# 	self.parameters['RT'] = self.answer_time - self.wait_time
+				# 	if self.ID != (self.session.nr_trials - 1):
+				# 		self.stopped = True
+				# 		self.stop()
+				# 		return
+				# 	else:
+				# 		self.phase_forward()
 
 				if ( self.answer_time  - self.wait_time) > self.phase_durations[5]: #end phase after some time when no response
 					self.parameters['RT'] = float("nan")
@@ -361,6 +366,7 @@ class DetectSession(Session):
 		self.output_path = os.path.join(wd, "data", "previous_trials")
 		if not os.path.exists(self.output_path):
 			os.makedirs(self.output_path)  
+
 
 		# deterimine indexes of previous runs
 		filter = np.ones(total_trials, dtype=bool)
