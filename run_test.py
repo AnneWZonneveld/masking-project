@@ -21,9 +21,11 @@ import shutil
 import glob
 import pandas as pd 
 import random
+import scipy
 from psychopy import logging, visual, clock, event, core
 from psychopy.tools.attributetools import attributeSetter, setAttribute
-from psychopy.visual import GratingStim, TextStim, ImageStim, NoiseStim, DotStim, Window
+from psychopy.visual import GratingStim, TextStim, ImageStim, NoiseStim, DotStim, Window, TextBox2
+from PIL import Image
 
 logging.console.setLevel(logging.CRITICAL)
 
@@ -34,11 +36,6 @@ import exptools
 from exptools.core.trial import Trial
 from exptools.core.session import Session
 
-# import exptools2
-# from exptools2.core.trial import Trial
-# from exptools2.core.session import Session
-
-p = ['FA', 'MISS']
 
 fullscr = False
 screen_size  = [1920, 1080]
@@ -60,8 +57,6 @@ nr_blocks = int(nr_trials/block_length)
 
 target_categories = pd.unique(trial_file['category']).tolist()
 target_concepts = pd.unique(trial_file['concept']).tolist()
-
-# target_categories = ["vegetable", "fruit", "drink", "insect", "bird", "clothing", "musical instrument", "body part", "plant", "sports equipment"]
 
 
 class DetectTrial(Trial):
@@ -103,13 +98,13 @@ class DetectTrial(Trial):
 		# Determine messages
 		if self.ID % self.session.block_length == 0 and self.ID > 0:
 			perf = np.array(self.session.corrects)[-self.session.block_length:][np.array(self.session.corrects)[-self.session.block_length:] >= 0].sum() / float(self.session.block_length) * 100.0
-			misses = (np.array(self.session.answers)[-self.session.block_length:]==-1).sum()
-			intro_text = """\nBlock %i: %i%% correct!\n You missed %i out of %i trials. \nPress space to continue.""" % (self.block,perf, misses , block_length)
+			intro_text = """\nBlock %i out %i: %i%% correct!\n Press space to continue.""" % (self.block, nr_blocks, perf)
 			print("perf: %i" %(perf))
 		else:
-			intro_text = """During this experiment you will be presented with images of different categories. After image presentation, you will be asked whether the shown image belongs to a particular category. Press j (right) to answer yes or press f (left) to answer no. 
-\n If the instructions are clear, press space to continue."""
-
+			intro_text = """During thtis experiment you will be presented with series of images. The first image in a trial is the target and the second image a mask.
+			\n After presentation, you have to answer whether the target image belongs to the probed category. Press j (right) to answer yes or press f (left) to answer no. 
+\n If the instructions are clear, press space to start."""
+			
 		# Determine probe 
 		if self.parameters['valid_cue'] == 1: 
 			probed_concept = self.parameters['concept']
@@ -122,16 +117,29 @@ class DetectTrial(Trial):
 		
 		probed_concept = probed_concept.replace('_', ' ')
 
-
-		probe_text = """Did you see : '%s'? \n  NO (press f) / YES (press j)""" % (probed_concept)
+		# probe_text = """Did you see : '%s'? \n  NO (press f) / YES (press j)""" % (probed_concept)
+		probe_text = """%s""" % (probed_concept)
+		instruction_text = """NO (press f) / YES (press j)"""
 		outro_text = """This is the end of today's session. Thank you for participating!"""	
 
 		self.message = TextStim(self.screen, pos=[0,0],text= intro_text, color = (1.0, 1.0, 1.0), height=20)
 		self.image_stim = ImageStim(self.screen, pos=[0,0], image = self.parameters['target_path'])
-		self.probe = TextStim(self.screen, pos=[0,0], text = probe_text, color = (1.0, 1.0, 1.0), height=20)
-		self.mask_stim = ImageStim(self.screen, pos = [0,0], image = self.parameters['mask_path'])
+		# self.probe = TextStim(self.screen, pos=[0,0], text = probe_text, color = (1.0, 1.0, 1.0), height=20)
+		self.probe = TextBox2(self.screen, pos=[0,0], text = probe_text, color = (1.0, 1.0, 1.0), font='Arial', bold = True, letterHeight=30, alignment='center', size=[None, None])
+		self.instruction= TextBox2(self.screen, pos=[0, -40], text = instruction_text, color = (1.0, 1.0, 1.0), font='Arial', letterHeight = 20, alignment='center', size=[None, None])
 		self.outro = TextStim(self.screen, pos=[0,0], text = outro_text, color = (1.0, 1.0, 1.0), height=20)
 
+		if self.parameters['mask_path'] != 'no_mask':
+			self.mask_stim = ImageStim(self.screen, pos = [0,0], image = self.parameters['mask_path'])
+		else:
+			self.mask_stim = self.fixation
+
+		# Calc target-mask distance
+		# target = np.asarray(Image.open(self.parameters['target_path']), dtype='float64')
+		# mask = np.asarray(Image.open(self.parameters['mask_path']), dtype='float64')
+		# distance = 1 - abs(pearsonr(np.ndarray.flatten(target), np.ndarray.flatten(mask))[0])
+		# # distance = scipy.spatial.distance.correlation(np.ndarray.flatten(target), np.ndarray.flatten(mask))
+		# self.parameters.update({'distance': distance})
 
 		# test 
 		# temp_target_path = os.path.join(wd, 'stimuli', 'DNN_analysis', 'images', 'aardvark_02s.jpg')
@@ -169,6 +177,7 @@ class DetectTrial(Trial):
 		
 		if self.phase == 5: # prompt
 			self.probe.draw()
+			self.instruction.draw()
 
 		if self.phase == 6: # outro
 			# if self.ID == (self.session.nr_trials - 1):
@@ -275,41 +284,18 @@ class DetectTrial(Trial):
 				if (self.wait_time - self.mask_stim_time) > self.phase_durations[4]:
 					self.phase_forward()
 
-			# elif self.phase == 5:   # Decision interval; phase is timed, but aborted at response
-			# 	self.answer_time = clock.getTime()
-			# 	if self.parameters['answer'] != -1: #end phase when respond
-			# 		# get reaction time
-			# 		self.parameters['RT'] = self.answer_time - self.wait_time
-			# 		self.stopped = True
-			# 		self.stop()
-			# 		return
-			# 	if ( self.answer_time  - self.wait_time) > self.phase_durations[5]: #end phase after some time when no response
-			# 		self.parameters['RT'] = float("nan")
-			# 		self.stopped = True
-			# 		self.stop()
-			# 		return
 
-			elif self.phase == 5:   # Decision interval; phase is timed, but aborted at response
+			elif self.phase == 5:   #Aborted at key response (f/j)
 				self.answer_time = clock.getTime()
 
-				# if self.parameters['answer'] != -1: #end phase when respond
-				# 	# get reaction time
-				# 	self.parameters['RT'] = self.answer_time - self.wait_time
+				# if ( self.answer_time  - self.wait_time) > self.phase_durations[5]: #end phase after some time when no response
+				# 	self.parameters['RT'] = float("nan")
 				# 	if self.ID != (self.session.nr_trials - 1):
 				# 		self.stopped = True
 				# 		self.stop()
 				# 		return
-				# 	else:
+				# 	else: # only last trial in run show outro
 				# 		self.phase_forward()
-
-				if ( self.answer_time  - self.wait_time) > self.phase_durations[5]: #end phase after some time when no response
-					self.parameters['RT'] = float("nan")
-					if self.ID != (self.session.nr_trials - 1):
-						self.stopped = True
-						self.stop()
-						return
-					else:
-						self.phase_forward()
 
 			# elif self.phase == 6:				# Feedback; only pratice block
 			# 	self.delay_4_time = clock.getTime()	
@@ -324,7 +310,7 @@ class DetectTrial(Trial):
 						
 		# we have stopped:
 		# frame_timer.log_histogram()     
-		self.stop()
+		# self.stop()
 
 
 class DetectSession(Session):
