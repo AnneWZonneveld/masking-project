@@ -40,7 +40,7 @@ target_categories = pd.unique(concept_selection['category'])
 # target_category = ["vegetable", "fruit", "drink", "insect", "bird", "clothing", "musical instrument", "body part", "plant", "sports equipment"]
 # mask_category = ["bird", "furniture"] # masks should different category than target
 
-masks = ['1_natural', '2_scrambled', '4_geometric', '5_lines', '6_blocked']
+masks = ['1_natural', '2_scrambled', '4_geometric', '5_lines', '6_blocked', 'no_mask']
 
 nr_concepts = 2
 nr_per_concept = 6
@@ -374,81 +374,6 @@ def phase_scramble(images, root,  p = 0.5, rescale = 'off'):
 
     return mask_paths
 
-
-# def block_scrambled(n_masks, root, target_size = (480, 480), block_size=(120,120)):
-#     """
-#     Function to create block scrambled masks based on natural images. 
-#     """
-
-#     mask_dir = os.path.join(root, '6_blocked')
-#     if not os.path.exists(mask_dir):
-#             os.makedirs(mask_dir)    
-
-#     img_dir = os.path.join(root, '1_natural')
-#     img_files = [f for f in os.listdir(img_dir) if f.endswith('.jpg')]
-    
-#     num_blocks = [int(np.ceil(target_size[0] / block_size[0])), int(np.ceil(target_size[1] /block_size[1]))]
-
-#     block_mask_paths = []
-#     df_rows = []
-   
-#     for m in range(n_masks):
-
-#         print(f'creating block mask {m}')
-       
-#         # matrix of target size
-#         block_mask = np.zeros((target_size[0], target_size[1], 3))
-
-#         # set up to store relevant info
-#         image_paths = []
-#         if m == 0:
-#             col_names = []
-
-#         # loop through blocks
-#         for x in range(num_blocks[0]):
-#             for y in range(num_blocks[1]):
-
-#                 # pick a random image
-#                 pick = img_files[np.random.randint(len(img_files))]
-#                 img = Image.open(os.path.join(img_dir , pick))
-                
-#                 # save which image picked from
-
-#                 img = np.asarray(img, dtype='float64')
-
-#                 # pick random block of image
-#                 block_offset = [np.random.randint(img.shape[0]-block_size[0]), np.random.randint(img.shape[1]-block_size[1])]
-#                 img_block = img[block_offset[0]:block_offset[0]+block_size[0], block_offset[1]:block_offset[1]+block_size[1],:]
-
-#                 # fill mask with random block
-#                 block_mask[x*block_size[0]:(x+1)*block_size[0],y*block_size[1]:(y+1)*block_size[1],:] = img_block
-
-#                 # save info
-#                 if m == 0:  
-#                     col_names.append(f'{x}_{y}')
-#                 image_paths.append(pick)
-
-#         # save im
-#         mask_im = Image.fromarray((block_mask).astype(np.uint8))
-#         mask_name = os.path.join(mask_dir, f'blocked_{m}_b{num_blocks[0]}.png')
-
-#         mask_im.save(mask_name)
-#         block_mask_paths.append(mask_name)
-
-#         # save info        
-#         row_info = [f'blocked_{m}_b{num_blocks[0]}.png']
-#         row_info = row_info + image_paths
-#         df_rows.append(row_info)
-    
-#     # create final ddf
-#     df = pd.concat([pd.DataFrame([i], columns= ['mask_name'] + col_names) for i in df_rows], ignore_index=True)
-#     df_path = os.path.join(wd, 'help_files', 'blocked_masks', root.split('/')[-2])   
-#     if not os.path.exists(df_path):
-#         os.makedirs(df_path)
-
-#     df.to_csv(os.path.join(df_path, f'block_masks_b{num_blocks}.csv'))
-    
-#     return block_mask_paths
 
 def block_scrambled(n_masks, root, target_size = (480, 480), block_size=(120,120)):
     """
@@ -926,50 +851,50 @@ def create_masks(things_concept = things_concept, image_paths = image_paths, typ
         if not os.path.exists(nat_mask_dir):
             os.makedirs(nat_mask_dir)   
 
-        # natural_mask_paths = []
-        # natural_masks = []
+        natural_mask_paths = []
+        natural_masks = []
 
-        # # Get mask paths and crop images
-        # for concept in target_concepts:
+        # Get mask paths and crop images
+        for concept in target_concepts:
 
-        #     print(f'creating natural mask: {concept[0]}')
+            print(f'creating natural mask: {concept[0]}')
 
-        #     paths = image_paths[image_paths.iloc[:, 0].str.contains(concept[0])].values.tolist()
+            paths = image_paths[image_paths.iloc[:, 0].str.contains(concept[0])].values.tolist()
 
-        #     # Correct for substrings
-        #     corrected_paths = []
+            # Correct for substrings
+            corrected_paths = []
 
-        #     for path in paths:
-        #         if path[0].split('/')[1] == concept[0]:
-        #             path = path[0]
-        #             corrected_paths.append(path)
+            for path in paths:
+                if path[0].split('/')[1] == concept[0]:
+                    path = path[0]
+                    corrected_paths.append(path)
 
-        #             im_name = path[7:]
-        #             im_path = os.path.join(wd, 'image_base', im_name)
-        #             im = Image.open(im_path).convert('RGB')
+                    im_name = path[7:]
+                    im_path = os.path.join(wd, 'image_base', im_name)
+                    im = Image.open(im_path).convert('RGB')
 
-        #             cropped_path = crop_image(image = (im, im_name), root = mask_dir)
-        #             cropped_im = Image.open(cropped_path).convert('RGB')
+                    cropped_path = crop_image(image = (im, im_name), root = mask_dir)
+                    cropped_im = Image.open(cropped_path).convert('RGB')
 
-        #             # Save array
-        #             np_cropped = np.array(cropped_im)
-        #             natural_masks.append((np_cropped, cropped_path))
-        #             natural_mask_paths.append(cropped_path)
+                    # Save array
+                    np_cropped = np.array(cropped_im)
+                    natural_masks.append((np_cropped, cropped_path))
+                    natural_mask_paths.append(cropped_path)
 
-        # # natural mask
-        # all_masks['natural'] = natural_mask_paths
+        # natural mask
+        all_masks['natural'] = natural_mask_paths
 
         # # block mask
         # blocked_medium = block_scrambled(n_masks = 10, root = mask_dir, target_size = (480, 480), block_size= (120, 120)) 
 
         # # scramlbe mask
-        # all_masks['scrambled'] = phase_scramble(natural_masks, root = mask_dir, rescale = 'range', p = 0.5) 
+        all_masks['scrambled'] = phase_scramble(natural_masks, root = mask_dir, rescale = 'range', p = 0.5) 
 
         # # geometric mask
         # all_masks['geometric'] = geometric_masks(sz_y = 480, sz_x = 480, n_masks = 20, root = mask_dir, d = 300)
 
-        # line mask 
-        all_masks['lines'] = line_masks(sz_y = 480, sz_x = 480, n_masks = 20, root = mask_dir, d = 300)
+        # # line mask 
+        # all_masks['lines'] = line_masks(sz_y = 480, sz_x = 480, n_masks = 20, root = mask_dir, d = 300)
 
 
 
@@ -1036,6 +961,8 @@ def create_selection_csv(things_concept = things_concept, image_paths = image_pa
                     mask_paths = [path for path in os.listdir(mask_concept_dir) if path != '.DS_Store']
                     picked_mask = random.choice(mask_paths)        
                     mask_path= os.path.join(mask_concept_dir, picked_mask) 
+                else:
+                    mask_path = 'no_mask'
                 
                 info = [target_path, target_concept[0], target_concept[1], mask, mask_path]
                 repeated_info = [info for i in range(nr_repeats)]
@@ -1117,6 +1044,6 @@ def create_selection_csv(things_concept = things_concept, image_paths = image_pa
    
 
 #  ----- Main---------------
-create_masks(things_concept = things_concept, image_paths = image_paths, type = 'experiment')
-# create_selection_csv()
+# create_masks(things_concept = things_concept, image_paths = image_paths, type = 'experiment')
+create_selection_csv()
 # create_masks(things_concept = things_concept, image_paths = image_paths, type = 'DNN_analysis')
