@@ -805,6 +805,7 @@ def line_masks(n_masks, root, sz_x = 480, sz_y = 480, d = 200):
             # save
             im_name = os.path.join(mask_dir, 'lines_' + str(m) + f'_d{d}.png' ) 
             ax.axis('off')
+            fig.set_size_inches(8, 8)
             fig.savefig(im_name, bbox_inches='tight', pad_inches = 0)
 
             # crop 
@@ -925,47 +926,47 @@ def create_masks(things_concept = things_concept, image_paths = image_paths, typ
         if not os.path.exists(nat_mask_dir):
             os.makedirs(nat_mask_dir)   
 
-        natural_mask_paths = []
-        natural_masks = []
+        # natural_mask_paths = []
+        # natural_masks = []
 
-        # Get mask paths and crop images
-        for concept in target_concepts:
+        # # Get mask paths and crop images
+        # for concept in target_concepts:
 
-            print(f'creating natural mask: {concept[0]}')
+        #     print(f'creating natural mask: {concept[0]}')
 
-            paths = image_paths[image_paths.iloc[:, 0].str.contains(concept[0])].values.tolist()
+        #     paths = image_paths[image_paths.iloc[:, 0].str.contains(concept[0])].values.tolist()
 
-            # Correct for substrings
-            corrected_paths = []
+        #     # Correct for substrings
+        #     corrected_paths = []
 
-            for path in paths:
-                if path[0].split('/')[1] == concept[0]:
-                    path = path[0]
-                    corrected_paths.append(path)
+        #     for path in paths:
+        #         if path[0].split('/')[1] == concept[0]:
+        #             path = path[0]
+        #             corrected_paths.append(path)
 
-                    im_name = path[7:]
-                    im_path = os.path.join(wd, 'image_base', im_name)
-                    im = Image.open(im_path).convert('RGB')
+        #             im_name = path[7:]
+        #             im_path = os.path.join(wd, 'image_base', im_name)
+        #             im = Image.open(im_path).convert('RGB')
 
-                    cropped_path = crop_image(image = (im, im_name), root = mask_dir)
-                    cropped_im = Image.open(cropped_path).convert('RGB')
+        #             cropped_path = crop_image(image = (im, im_name), root = mask_dir)
+        #             cropped_im = Image.open(cropped_path).convert('RGB')
 
-                    # Save array
-                    np_cropped = np.array(cropped_im)
-                    natural_masks.append((np_cropped, cropped_path))
-                    natural_mask_paths.append(cropped_path)
+        #             # Save array
+        #             np_cropped = np.array(cropped_im)
+        #             natural_masks.append((np_cropped, cropped_path))
+        #             natural_mask_paths.append(cropped_path)
 
-        # natural mask
-        all_masks['natural'] = natural_mask_paths
+        # # natural mask
+        # all_masks['natural'] = natural_mask_paths
 
-        # block mask
-        blocked_medium = block_scrambled(n_masks = 10, root = mask_dir, target_size = (480, 480), block_size= (120, 120)) 
+        # # block mask
+        # blocked_medium = block_scrambled(n_masks = 10, root = mask_dir, target_size = (480, 480), block_size= (120, 120)) 
 
-        # scramlbe mask
-        all_masks['scrambled'] = phase_scramble(natural_masks, root = mask_dir, rescale = 'range', p = 0.5) 
+        # # scramlbe mask
+        # all_masks['scrambled'] = phase_scramble(natural_masks, root = mask_dir, rescale = 'range', p = 0.5) 
 
-        # geometric mask
-        all_masks['geometric'] = geometric_masks(sz_y = 480, sz_x = 480, n_masks = 20, root = mask_dir, d = 300)
+        # # geometric mask
+        # all_masks['geometric'] = geometric_masks(sz_y = 480, sz_x = 480, n_masks = 20, root = mask_dir, d = 300)
 
         # line mask 
         all_masks['lines'] = line_masks(sz_y = 480, sz_x = 480, n_masks = 20, root = mask_dir, d = 300)
@@ -1116,6 +1117,6 @@ def create_selection_csv(things_concept = things_concept, image_paths = image_pa
    
 
 #  ----- Main---------------
-# create_masks(things_concept = things_concept, image_paths = image_paths, type = 'experiment')
-create_selection_csv()
+create_masks(things_concept = things_concept, image_paths = image_paths, type = 'experiment')
+# create_selection_csv()
 # create_masks(things_concept = things_concept, image_paths = image_paths, type = 'DNN_analysis')
