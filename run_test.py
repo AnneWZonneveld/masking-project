@@ -27,9 +27,15 @@ from psychopy.tools.attributetools import attributeSetter, setAttribute
 from psychopy.visual import GratingStim, TextStim, ImageStim, NoiseStim, DotStim, Window, TextBox2
 from PIL import Image
 
-logging.console.setLevel(logging.CRITICAL)
 
 wd = '/Users/AnneZonneveld/Documents/STAGE/masking-project/'
+log_dir = os.path.join(wd, 'logfiles')
+if not os.path.exists(log_dir):
+	os.makedirs(log_dir)
+
+logging.console.setLevel(logging.WARNING)
+# logging.console.setLevel(logging.EXP)
+
 sys.path.append(os.path.join(wd, 'exptools'))
 
 import exptools
@@ -43,10 +49,10 @@ screen_size  = [1920, 1080]
 
 trial_file = pd.read_csv(os.path.join(wd, 'help_files', 'selection_THINGS.csv'))   
 # total_trials = len(trial_file) # 4860
-# total_trials = 4860
-# runs = 4
+# total_trials = 5832
+# runs = 3
 # nr_trials = int(total_trials / runs)
-# block_length = 243 #divideable of total_trials
+# block_length = 81 --> 24 blocks
 # nr_blocks = int(nr_trials/block_length)
 
 total_trials = 40
@@ -78,7 +84,13 @@ class DetectTrial(Trial):
 		self.parameters.update({'answer' :  -1,
 								'correct': -1,
 								'block': self.block,
-								'RT' : 0
+								'RT' : 0,
+								'target_onset': 0,
+								'target_offset': 0, 
+								'mask_onset': 0,
+								'mask_offset': 0, 
+								'probe_onset': 0,
+								'response_time': 0
 								})
 		
 		self.stopped = False
@@ -168,9 +180,12 @@ class DetectTrial(Trial):
 		
 		if self.phase == 2:  # image presentation
 			self.image_stim.draw()
+			self.parameters.update({'target_onset': clock.getTime() - self.session.start_time})
+			
 
 		if self.phase == 3: # mask presentation
 			self.mask_stim.draw()
+			self.parameters.update({'mask_onset': clock.getTime() - self.session.start_time})
 			
 		if self.phase == 4: # empty screen
 			self.fixation.draw()
@@ -178,6 +193,7 @@ class DetectTrial(Trial):
 		if self.phase == 5: # prompt
 			self.probe.draw()
 			self.instruction.draw()
+			self.parameters.update({'probe_onset': clock.getTime() - self.session.start_time})
 
 		if self.phase == 6: # outro
 			# if self.ID == (self.session.nr_trials - 1):
@@ -205,14 +221,15 @@ class DetectTrial(Trial):
 		for ev in event.getKeys():
 			if len(ev) > 0:
 				if ev in ['esc', 'escape']:
-					self.events.append(
+					self.session.events.append(
 						[-99, clock.getTime() - self.start_time])
 					self.stopped = True
 					self.session.stopped = True
 					print('run canceled by user')
+					self.session.closed()
 
 				elif ev == 'space':
-					self.events.append(
+					self.session.events.append(
 						[99, clock.getTime() - self.start_time])
 					if self.phase == 0:
 						self.phase_forward()
@@ -222,10 +239,10 @@ class DetectTrial(Trial):
 						print("End of session")
 
 				elif ev == 'j':
-					self.events.append([1,clock.getTime()-self.start_time])
+					self.session.events.append([1,clock.getTime()-self.start_time])
 					if self.phase == 5:
 						# yes 
-						self.parameters.update({'answer':1})
+						self.parameters.update({'answer':1, 'response_time': clock.getTime()-self.session.start_time})
 						if self.parameters['valid_cue'] == self.parameters['answer']:
 							self.parameters['correct'] = 1
 						else:
@@ -236,10 +253,10 @@ class DetectTrial(Trial):
 
 
 				elif ev == 'f':
-					self.events.append([1,clock.getTime()-self.start_time])
+					self.session.events.append([1,clock.getTime()-self.start_time])
 					if self.phase == 5:
 						# no
-						self.parameters.update({'answer':0})
+						self.parameters.update({'answer':1, 'response_time': clock.getTime()-self.session.start_time})
 						if self.parameters['valid_cue'] == self.parameters['answer']:
 							self.parameters['correct'] = 1
 						else:
@@ -258,7 +275,7 @@ class DetectTrial(Trial):
 							
 			if self.phase == 0:
 				self.prestimulation_time = clock.getTime()
-
+				
 				# For all trials that are not FTIB, skip phase 0
 				if self.ID != 0 and self.ID % self.session.block_length != 0:
 					if (self.prestimulation_time  - self.start_time ) > self.phase_durations[0]:
@@ -272,11 +289,13 @@ class DetectTrial(Trial):
 			elif self.phase == 2:  # image presentation; phase is timed
 				self.image_stim_time = clock.getTime()				
 				if ( self.image_stim_time - self.delay_1_time ) > self.phase_durations[2]: 
+					self.parameters.update({'target_offset': clock.getTime() - self.session.start_time})
 					self.phase_forward()
 
 			elif self.phase == 3: # mask presentation; phase is timed
 				self.mask_stim_time = clock.getTime()
 				if (self.mask_stim_time - self.image_stim_time) > self.phase_durations[3]:
+					self.parameters.update({'mask_offset': clock.getTime() - self.session.start_time})
 					self.phase_forward()
 
 			elif self.phase == 4: # wait; blank screen; phase timed
@@ -285,7 +304,7 @@ class DetectTrial(Trial):
 					self.phase_forward()
 
 
-			elif self.phase == 5:   #Aborted at key response (f/j)
+			elif self.phase == 5:   #Probe, Aborted at key response (f/j)
 				self.answer_time = clock.getTime()
 
 				# if ( self.answer_time  - self.wait_time) > self.phase_durations[5]: #end phase after some time when no response
@@ -328,26 +347,8 @@ class DetectSession(Session):
 		self.determine_trials()
 		self.create_yes_no_trials()
 	
-	# def create_output_filename(self):
-	# 	data_path = os.path.join(wd, "data")
-	# 	if not os.path.exists(os.path.join(data_path, "sub_" + str(subject_nr))):
-	# 		os.makedirs(os.path.join(data_path, "sub_" + str(subject_nr)))
-	# 	self.output_path = os.path.join(data_path, "sub_" + str(subject_nr))
-	# 	self.output_file = os.path.join(data_path, "sub_" + str(subject_nr), "run_" + str(self.index_number))
-
-	# def load_THINGS(self):
-	# 	self.THINGS_data = pd.read_csv(os.path.join(wd, "help_files", "selection_THINGS.csv" ), sep=',', header=0)
-	# 	self.categories = pd.unique(self.THINGS_data['category'])
-	# 	self.concepts = pd.unique(self.THINGS_data['concept'])
 
 	def determine_trials(self):
-		# self.images = []
-		# self.nr_per_cat = int(total_trials['actual'] / len(self.categories)) # or self.nr_trials
-		# for category in self.categories:
-		# 	selection = random.sample(self.THINGS_data[self.THINGS_data['category'] == category].values.tolist(), self.nr_per_cat)
-		# 	self.images.append(selection)
-		# self.images = np.array(self.images)
-
 
 		self.output_path = os.path.join(wd, "data", "previous_trials")
 		if not os.path.exists(self.output_path):
@@ -465,5 +466,8 @@ if __name__ == '__main__':
 	subject_nr = str(input('Participant nr: '))
 
 	index_number = int(input('Which run: ')) 
+
+	log_filename = os.path.join(log_dir, f"s{subject_nr}_r{index_number}")
+	lastLog = logging.LogFile(log_filename, level=logging.INFO, filemode='w')
 
 	main(subject_nr = subject_nr, index_number=index_number, nr_trials=nr_trials)
