@@ -965,8 +965,9 @@ def create_selection_csv(things_concept = things_concept, image_paths = image_pa
                     mask_path = 'no_mask'
                 
                 info = [target_path, target_concept[0], target_concept[1], mask, mask_path]
-                repeated_info = [info for i in range(nr_repeats)]
-                sub_df = pd.DataFrame(repeated_info, columns= ['ImageID','concept','category', 'mask_type', 'mask_path'])
+                # repeated_info = [info for i in range(nr_repeats)]
+                # sub_df = pd.DataFrame(repeated_info, columns= ['ImageID','concept','category', 'mask_type', 'mask_path'])
+                sub_df = pd.DataFrame([info], columns= ['ImageID','concept','category', 'mask_type', 'mask_path'])
 
                 # Add to overall df
                 df = pd.concat([df, sub_df])
@@ -975,73 +976,6 @@ def create_selection_csv(things_concept = things_concept, image_paths = image_pa
     df = df.reset_index()
     df = df.drop(columns=['index'])
     df.to_csv(os.path.join(wd, 'help_files', 'selection_THINGS.csv')) 
-
-# def create_selection_csv(things_concept = things_concept, image_paths = image_paths, target_category = target_category):
-#     """creates csv that contains info for all trials:
-#     - imageID (path to target image)
-#     - concept
-#     - category
-#     - mask (path to mask)"""
-
-#     print(f'creating selection')
-
-#     experiment_dir = os.path.join(wd, 'stimuli', 'experiment')
-#     image_dir = os.path.join(experiment_dir, 'images')
-#     mask_dir = os.path.join(experiment_dir, 'masks')
-
-#     if not os.path.exists(image_dir):
-#         os.makedirs(image_dir)   
-
-#     df = pd.DataFrame(columns= ['ImageID','concept','category', 'mask_type', 'mask_path'])
-
-#     for concept in target_concepts:
-
-#         paths = image_paths[image_paths.iloc[:, 0].str.contains(concept[0])].values.tolist()
-
-#         # Correct for substrings
-#         corrected_paths = []
-#         for path in paths:
-#             if path[0].split('/')[1] == concept[0]:
-#                 corrected_paths.append(path[0])
-
-#         # pick nr_per_concept
-#         corrected_paths  = random.sample(corrected_paths, nr_per_concept)
-
-#         for path in corrected_paths:
-
-#             image_name = path[7:]
-
-#             print(f"current target: {image_name}")
-    
-#             # Get image from image base and convert 
-#             im_path = os.path.join(wd, 'image_base', image_name)
-#             im = Image.open(im_path).convert('RGB')
-
-#             # Crop -- double?
-#             cropped_path = crop_image(image = (im, image_name), root = image_dir)
-
-#             # Link masks
-#             for mask in masks:
-
-#                 # find paths of all mask images of that type
-#                 cur_mask_dir = os.path.join(mask_dir, mask)
-#                 mask_paths = [path for path in os.listdir(cur_mask_dir) if path != '.DS_Store']
-
-#                 for mask_path in mask_paths:
-                
-#                     mask_path = os.path.join(cur_mask_dir, mask_path)
-#                     info = [cropped_path, concept[0], concept[1], mask, mask_path]
-#                     repeated_info = [info for i in range(nr_repeats)]
-#                     sub_df = pd.DataFrame(repeated_info, columns= ['ImageID','concept','category', 'mask_type', 'mask_path'])
-
-#                     # Add to overall df
-#                     df = pd.concat([df, sub_df])
-
-#     # Export 
-#     df = df.reset_index()
-#     df = df.drop(columns=['index'])
-#     df.to_csv(os.path.join(wd, 'help_files', 'selection_THINGS.csv')) 
-   
 
 #  ----- Main---------------
 # create_masks(things_concept = things_concept, image_paths = image_paths, type = 'experiment')

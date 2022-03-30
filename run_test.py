@@ -1,7 +1,6 @@
 """"
 Visual detection task. 
 Based on 2AFC signal detection task by Stijn Nuiten.
-
 Created by Anne Zonneveld, Feb 2022
 """
 
@@ -48,16 +47,20 @@ screen_size  = [1920, 1080]
 
 
 trial_file = pd.read_csv(os.path.join(wd, 'help_files', 'selection_THINGS.csv'))   
-# total_trials = len(trial_file) # 4860
-# total_trials = 5832
-# runs = 3
+
+# nr_trials = 1944
+# block_length = 54  
+# nr_blocks = int(nr_trials/block_length)  #36 blocks
+
+# total_trials = 40
+# runs = 2
 # nr_trials = int(total_trials / runs)
-# block_length = 81 --> 24 blocks
+# block_length = 5 #divideable of total_trials
 # nr_blocks = int(nr_trials/block_length)
 
-total_trials = 40
+
 runs = 2
-nr_trials = int(total_trials / runs)
+nr_trials = 20
 block_length = 5 #divideable of total_trials
 nr_blocks = int(nr_trials/block_length)
 
@@ -256,7 +259,7 @@ class DetectTrial(Trial):
 					self.session.events.append([1,clock.getTime()-self.start_time])
 					if self.phase == 5:
 						# no
-						self.parameters.update({'answer':1, 'response_time': clock.getTime()-self.session.start_time})
+						self.parameters.update({'answer':0, 'response_time': clock.getTime()-self.session.start_time})
 						if self.parameters['valid_cue'] == self.parameters['answer']:
 							self.parameters['correct'] = 1
 						else:
@@ -342,42 +345,16 @@ class DetectSession(Session):
 		self.standard_parameters = {'run': self.index_number}
 
 		self.create_output_filename() # standard function?
-
-		# self.load_THINGS()
-		self.determine_trials()
 		self.create_yes_no_trials()
 	
-
-	def determine_trials(self):
-
-		self.output_path = os.path.join(wd, "data", "previous_trials")
-		if not os.path.exists(self.output_path):
-			os.makedirs(self.output_path)  
-
-
-		# deterimine indexes of previous runs
-		filter = np.ones(total_trials, dtype=bool)
-		if self.index_number > 1:
-			previous_index = pd.read_csv(os.path.join(self.output_path, f'sub_{subject_nr}.csv'))
-			for i in previous_index['index']:
-				filter[i] = False
-
-		# pick trials for current run
-		self.all_trials_index = np.arange(total_trials)
-		self.available_trials_index = self.all_trials_index[filter]
-		self.current_trials_index = random.sample(self.available_trials_index.tolist(), nr_trials)
-		
-		# save chosen indices to be run in previous_trials.csv --> maybe later? 
-		df = pd.DataFrame(self.current_trials_index, columns=['index'])
-		if self.index_number > 1:
-			df = df.append(previous_index, ignore_index=True)
-
-		# export 
-		df.to_csv(os.path.join(self.output_path, f'sub_{subject_nr}.csv'))
-
-
+	
 	def create_yes_no_trials(self):
 		"""creates trials for yes/no runs"""
+
+		self.all_trials_index = np.arange(nr_trials)
+		self.current_trials_index = random.sample(self.all_trials_index.tolist(), nr_trials)
+
+		shell()
 
 		# Create yes-no trials in nested for-loop:
 		self.valid_cue = np.array([0,1])
