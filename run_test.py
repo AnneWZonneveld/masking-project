@@ -48,16 +48,10 @@ screen_size  = [1920, 1080]
 
 trial_file = pd.read_csv(os.path.join(wd, 'help_files', 'selection_THINGS.csv'))   
 
+# runs = 3
 # nr_trials = 1944
-# block_length = 54  
-# nr_blocks = int(nr_trials/block_length)  #36 blocks
-
-# total_trials = 40
-# runs = 2
-# nr_trials = int(total_trials / runs)
-# block_length = 5 #divideable of total_trials
-# nr_blocks = int(nr_trials/block_length)
-
+# block_length = 54 #divideable of total_trials
+# nr_blocks = int(nr_trials/block_length) # 37
 
 runs = 2
 nr_trials = 20
@@ -96,7 +90,10 @@ class DetectTrial(Trial):
 								'response_time': 0
 								})
 		
+
+		self.target_drawn = self.mask_drawn = self.probe_drawn = 0
 		self.stopped = False
+
 		super(
 			DetectTrial,
 			self).__init__(
@@ -149,12 +146,7 @@ class DetectTrial(Trial):
 		else:
 			self.mask_stim = self.fixation
 
-		# Calc target-mask distance
-		# target = np.asarray(Image.open(self.parameters['target_path']), dtype='float64')
-		# mask = np.asarray(Image.open(self.parameters['mask_path']), dtype='float64')
-		# distance = 1 - abs(pearsonr(np.ndarray.flatten(target), np.ndarray.flatten(mask))[0])
-		# # distance = scipy.spatial.distance.correlation(np.ndarray.flatten(target), np.ndarray.flatten(mask))
-		# self.parameters.update({'distance': distance})
+
 
 		# test 
 		# temp_target_path = os.path.join(wd, 'stimuli', 'DNN_analysis', 'images', 'aardvark_02s.jpg')
@@ -180,23 +172,32 @@ class DetectTrial(Trial):
 		if self.phase == 1: # pre-image fixation
 			self.fixation.color = 'black'
 			self.fixation.draw()
+			
 		
 		if self.phase == 2:  # image presentation
 			self.image_stim.draw()
-			self.parameters.update({'target_onset': clock.getTime() - self.session.start_time})
+			self.target_drawn += 1
+			print('target_drawn')
+			
+			# self.parameters.update({'target_onset': clock.getTime() - self.session.start_time})
 			
 
 		if self.phase == 3: # mask presentation
 			self.mask_stim.draw()
-			self.parameters.update({'mask_onset': clock.getTime() - self.session.start_time})
+			self.mask_drawn += 1
+			print('mask_drawn')
+			
+			# self.parameters.update({'mask_onset': clock.getTime() - self.session.start_time})
 			
 		if self.phase == 4: # empty screen
 			self.fixation.draw()
-		
+			
 		if self.phase == 5: # prompt
+			# self.parameters.update({'probe_onset': clock.getTime() - self.session.start_time})
 			self.probe.draw()
 			self.instruction.draw()
-			self.parameters.update({'probe_onset': clock.getTime() - self.session.start_time})
+			self.probe_drawn += 1
+			
 
 		if self.phase == 6: # outro
 			# if self.ID == (self.session.nr_trials - 1):
@@ -229,7 +230,7 @@ class DetectTrial(Trial):
 					self.stopped = True
 					self.session.stopped = True
 					print('run canceled by user')
-					self.session.closed()
+					self.session.close()
 
 				elif ev == 'space':
 					self.session.events.append(
@@ -251,8 +252,11 @@ class DetectTrial(Trial):
 						else:
 							self.parameters['correct'] = 0
 						self.parameters['RT'] = self.answer_time - self.wait_time
-						self.stopped = True
-						self.stop()
+						if self.ID != (self.session.nr_trials - 1):
+							self.stopped = True
+							self.stop()
+						else:
+							self.phase_forward()
 
 
 				elif ev == 'f':
@@ -265,8 +269,11 @@ class DetectTrial(Trial):
 						else:
 							self.parameters['correct'] = 0
 						self.parameters['RT'] = self.answer_time - self.wait_time
-						self.stopped = True
-						self.stop()
+						if self.ID != (self.session.nr_trials - 1):
+							self.stopped = True
+							self.stop()
+						else:
+							self.phase_forward()
 
 			super(DetectTrial, self).key_event( event )
 
@@ -277,6 +284,7 @@ class DetectTrial(Trial):
 			self.run_time = clock.getTime() - self.start_time
 							
 			if self.phase == 0:
+				print('phase 0')
 				self.prestimulation_time = clock.getTime()
 				
 				# For all trials that are not FTIB, skip phase 0
@@ -285,29 +293,40 @@ class DetectTrial(Trial):
 						self.phase_forward()
 				
 			elif self.phase == 1:  # pre-stim cue; phase is timed
+				print('phase 1')
 				self.delay_1_time = clock.getTime()
 				if ( self.delay_1_time - self.prestimulation_time ) > self.phase_durations[1]:
 					self.phase_forward()
 
 			elif self.phase == 2:  # image presentation; phase is timed
+				print('phase 2')
+				if self.target_drawn == 1:
+					self.parameters.update({'target_onset': clock.getTime() - self.session.start_time})
 				self.image_stim_time = clock.getTime()				
 				if ( self.image_stim_time - self.delay_1_time ) > self.phase_durations[2]: 
 					self.parameters.update({'target_offset': clock.getTime() - self.session.start_time})
 					self.phase_forward()
 
 			elif self.phase == 3: # mask presentation; phase is timed
+				print('phase 3')
+				if self.mask_drawn == 1:
+					self.parameters.update({'mask_onset': clock.getTime() - self.session.start_time})
 				self.mask_stim_time = clock.getTime()
 				if (self.mask_stim_time - self.image_stim_time) > self.phase_durations[3]:
 					self.parameters.update({'mask_offset': clock.getTime() - self.session.start_time})
 					self.phase_forward()
 
 			elif self.phase == 4: # wait; blank screen; phase timed
+				print('phase 4')
 				self.wait_time = clock.getTime()
 				if (self.wait_time - self.mask_stim_time) > self.phase_durations[4]:
 					self.phase_forward()
 
 
 			elif self.phase == 5:   #Probe, Aborted at key response (f/j)
+				print('phase 5')
+				if self.probe_drawn == 1:
+					self.parameters.update({'probe_onset': clock.getTime() - self.session.start_time})
 				self.answer_time = clock.getTime()
 
 				# if ( self.answer_time  - self.wait_time) > self.phase_durations[5]: #end phase after some time when no response
@@ -353,8 +372,6 @@ class DetectSession(Session):
 
 		self.all_trials_index = np.arange(nr_trials)
 		self.current_trials_index = random.sample(self.all_trials_index.tolist(), nr_trials)
-
-		shell()
 
 		# Create yes-no trials in nested for-loop:
 		self.valid_cue = np.array([0,1])
