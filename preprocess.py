@@ -854,6 +854,7 @@ def create_masks(things_concept = things_concept, image_paths = image_paths, typ
         natural_mask_paths = []
         natural_masks = []
 
+        shell()
         # Get mask paths and crop images
         for concept in target_concepts:
 
@@ -885,16 +886,16 @@ def create_masks(things_concept = things_concept, image_paths = image_paths, typ
         all_masks['natural'] = natural_mask_paths
 
         # # block mask
-        # blocked_medium = block_scrambled(n_masks = 10, root = mask_dir, target_size = (480, 480), block_size= (120, 120)) 
+        blocked_medium = block_scrambled(n_masks = 10, root = mask_dir, target_size = (480, 480), block_size= (120, 120)) 
 
         # # scramlbe mask
-        all_masks['scrambled'] = phase_scramble(natural_masks, root = mask_dir, rescale = 'range', p = 0.5) 
+        all_masks['scrambled'] = phase_scramble(natural_masks, root = mask_dir, rescale = 'range', p = 1) 
 
         # # geometric mask
-        # all_masks['geometric'] = geometric_masks(sz_y = 480, sz_x = 480, n_masks = 20, root = mask_dir, d = 300)
+        #all_masks['geometric'] = geometric_masks(sz_y = 480, sz_x = 480, n_masks = 20, root = mask_dir, d = 300)
 
         # # line mask 
-        # all_masks['lines'] = line_masks(sz_y = 480, sz_x = 480, n_masks = 20, root = mask_dir, d = 300)
+        #all_masks['lines'] = line_masks(sz_y = 480, sz_x = 480, n_masks = 20, root = mask_dir, d = 300)
 
 
 

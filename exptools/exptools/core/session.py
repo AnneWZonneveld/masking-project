@@ -174,9 +174,10 @@ class Session(object):
     
     def close(self):
         """close screen and save data"""
+        shell()
         pygame.mixer.quit()
         self.screen.close()
-        parsopf = open(self.output_file + '_outputDict.pkl', 'a')
+        parsopf = open(self.output_file + '_outputDict.pkl', 'ab')
         pkl.dump(self.outputDict,parsopf)
         parsopf.close()
         # also output parameters as tsv

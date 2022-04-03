@@ -14,7 +14,7 @@ old_df = pd.read_csv(old_file, sep=',', header=0)
 columns = ['ImageID','concept','category', 'mask_type', 'mask_path']
 new_df = pd.DataFrame(columns=columns)
 
-lab = '2.10A'
+lab = '2.10B'
 
 for i in range(len(old_df)):
 

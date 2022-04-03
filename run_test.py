@@ -28,6 +28,8 @@ from PIL import Image
 
 
 wd = '/Users/AnneZonneveld/Documents/STAGE/masking-project/'
+wd = '/Users/onderzoekerl210/Desktop/Anne/masking-project/'
+
 log_dir = os.path.join(wd, 'logfiles')
 if not os.path.exists(log_dir):
 	os.makedirs(log_dir)
@@ -284,7 +286,6 @@ class DetectTrial(Trial):
 			self.run_time = clock.getTime() - self.start_time
 							
 			if self.phase == 0:
-				print('phase 0')
 				self.prestimulation_time = clock.getTime()
 				
 				# For all trials that are not FTIB, skip phase 0
@@ -293,13 +294,11 @@ class DetectTrial(Trial):
 						self.phase_forward()
 				
 			elif self.phase == 1:  # pre-stim cue; phase is timed
-				print('phase 1')
 				self.delay_1_time = clock.getTime()
 				if ( self.delay_1_time - self.prestimulation_time ) > self.phase_durations[1]:
 					self.phase_forward()
 
 			elif self.phase == 2:  # image presentation; phase is timed
-				print('phase 2')
 				if self.target_drawn == 1:
 					self.parameters.update({'target_onset': clock.getTime() - self.session.start_time})
 				self.image_stim_time = clock.getTime()				
@@ -308,7 +307,6 @@ class DetectTrial(Trial):
 					self.phase_forward()
 
 			elif self.phase == 3: # mask presentation; phase is timed
-				print('phase 3')
 				if self.mask_drawn == 1:
 					self.parameters.update({'mask_onset': clock.getTime() - self.session.start_time})
 				self.mask_stim_time = clock.getTime()
@@ -317,14 +315,12 @@ class DetectTrial(Trial):
 					self.phase_forward()
 
 			elif self.phase == 4: # wait; blank screen; phase timed
-				print('phase 4')
 				self.wait_time = clock.getTime()
 				if (self.wait_time - self.mask_stim_time) > self.phase_durations[4]:
 					self.phase_forward()
 
 
 			elif self.phase == 5:   #Probe, Aborted at key response (f/j)
-				print('phase 5')
 				if self.probe_drawn == 1:
 					self.parameters.update({'probe_onset': clock.getTime() - self.session.start_time})
 				self.answer_time = clock.getTime()
