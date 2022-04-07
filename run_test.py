@@ -142,63 +142,6 @@ class DetectTrial(Trial):
 		else:
 			self.mask_stim = self.fixation
 
-
-
-		# test 
-		# temp_target_path = os.path.join(wd, 'stimuli', 'DNN_analysis', 'images', 'aardvark_02s.jpg')
-		# temp_mask_path = os.path.join(wd, 'stimuli', 'DNN_analysis', 'masks', '2_scrambled', 'v1_scrambled_0_p0.1.png')
-		# self.message = TextStim(self.screen, pos=[0,0],text= intro_text, color = (1.0, 1.0, 1.0), height=20)
-		# self.image_stim = ImageStim(self.screen, pos=[0,0], image = temp_target_path)
-		# self.probe = TextStim(self.screen, pos=[0,0], text = probe_text, color = (1.0, 1.0, 1.0), height=20)
-		# self.outro = TextStim(self.screen, pos=[0,0], text = outro_text, color = (1.0, 1.0, 1.0), height=20)
-		# self.mask_stim = ImageStim(self.screen, pos = [0,0], image = temp_mask_path)
-
-
-	
-	def draw(self):
-		# draw additional stimuli:
-
-		if self.phase == 0: # instruction / message
-			# if self.ID == 0 or self.ID % self.session.block_length == 0 or self.ID == total_trials['practice'] + total_trials['actual']:
-			if self.ID == 0 or self.ID % self.session.block_length == 0:
-				self.message.draw()
-			else:
-				self.fixation.draw()
-
-		if self.phase == 1: # pre-image fixation
-			self.fixation.color = 'black'
-			self.fixation.draw()
-			
-		if self.phase == 2:  # image presentation
-			self.image_stim.draw()
-			self.target_drawn += 1
-
-		if self.phase == 3: # mask presentation
-			self.mask_stim.draw()
-			self.mask_drawn += 1
-			
-		if self.phase == 4: # empty screen
-			self.fixation.draw()
-			
-		if self.phase == 5: # prompt
-			self.probe.draw()
-			self.instruction.draw()
-			self.probe_drawn += 1
-			
-		if self.phase == 6: # outro
-			self.outro.draw()
-
-		# elif self.phase == 6: # feedback / only in practice block
-		# 	if self.ID <= total_trials['practice']:
-		# 		if self.parameters['correct'] == 1 :
-		# 			self.fixation.color = 'blue'
-		# 		elif self.parameters['correct'] == 0:
-		# 			self.fixation.color = 'red'
-		# 	else:
-		# 		self.fixation.color = 'black'
-			
-		# 	self.fixation.draw()
-
 		super(DetectTrial, self).draw()
 
 	def event(self):
@@ -263,78 +206,75 @@ class DetectTrial(Trial):
 		super(DetectTrial, self).run()
 
 		while not self.stopped:
+
 			self.run_time = clock.getTime() - self.start_time
-							
+
 			if self.phase == 0:
+				print('phase 0')
 				
-				self.prestimulation_time = clock.getTime()
-				
-				# For all trials that are not FTIB, skip phase 0
-				if self.ID != 0 and self.ID % self.session.block_length != 0:
-					if (self.prestimulation_time  - self.start_time ) > self.phase_durations[0]:
-						self.phase_forward()
-				
+				if self.ID == 0 or self.ID % self.session.block_length == 0:
+					print('FTIB')
+					self.message.draw()
+					self.screen.flip()
+				else:
+					self.phase_forward()
+					
 			elif self.phase == 1:  # pre-stim cue; phase is timed
-				
-				self.delay_1_time = clock.getTime()
-				if ( self.delay_1_time - self.prestimulation_time ) > self.phase_durations[1]:
+				print('phase 1')
+				self.fixation.color = 'black'
+				for frameN in range(int(self.phase_durations[1])):
+					self.fixation.draw()
+					self.screen.flip()
+
+				if frameN == int(self.phase_durations[1]) - 1:
 					self.phase_forward()
 
 			elif self.phase == 2:  # image presentation; phase is timed
-				
-				if self.target_drawn == 1:
-					self.parameters.update({'target_onset': clock.getTime() - self.session.start_time})
-				self.image_stim_time = clock.getTime()				
-				if ( self.image_stim_time - self.delay_1_time ) > self.phase_durations[2]: 
+				print('phase 2')
+				for frameN in range(int(self.phase_durations[2])):
+					self.image_stim.draw()
+					if frameN == 0:
+						self.parameters.update({'target_onset': clock.getTime() - self.session.start_time})
+					self.screen.flip()
+
+				if frameN == int(self.phase_durations[2]) - 1:
 					self.parameters.update({'target_offset': clock.getTime() - self.session.start_time})
 					self.phase_forward()
-
+								
 			elif self.phase == 3: # mask presentation; phase is timed
-				
-				if self.mask_drawn == 1:
-					self.parameters.update({'mask_onset': clock.getTime() - self.session.start_time})
-				self.mask_stim_time = clock.getTime()
-				if (self.mask_stim_time - self.image_stim_time) > self.phase_durations[3]:
+				print('phase 3')
+				for frameN in range(int(self.phase_durations[3])):
+					self.mask_stim.draw()
+					if frameN == 0:
+						self.parameters.update({'mask_onset': clock.getTime() - self.session.start_time})
+					self.screen.flip()
+
+				if frameN == int(self.phase_durations[3]) - 1:
 					self.parameters.update({'mask_offset': clock.getTime() - self.session.start_time})
 					self.phase_forward()
 
 			elif self.phase == 4: # wait; blank screen; phase timed
-				
-				self.wait_time = clock.getTime()
-				if (self.wait_time - self.mask_stim_time) > self.phase_durations[4]:
+				print('phase 4')
+				for frameN in range(int(self.phase_durations[4])):
+					self.fixation.draw()
+					self.screen.flip()
+
+				if frameN == int(self.phase_durations[4])-1:
 					self.phase_forward()
 
-
-			elif self.phase == 5:   #Probe, Aborted at key response (z or /)
-				
-				if self.probe_drawn == 1:
+			elif self.phase == 5:   #Probe, Aborted at key response (a or l)
+				print('phase 5')
+				counter = 0
+				self.probe.draw()
+				self.instruction.draw()
+				if counter == 0:
 					self.parameters.update({'probe_onset': clock.getTime() - self.session.start_time})
-				self.answer_time = clock.getTime()
+				counter += 1
+				self.screen.flip()
 
-				# if ( self.answer_time  - self.wait_time) > self.phase_durations[5]: #end phase after some time when no response
-				# 	self.parameters['RT'] = float("nan")
-				# 	if self.ID != (self.session.nr_trials - 1):
-				# 		self.stopped = True
-				# 		self.stop()
-				# 		return
-				# 	else: # only last trial in run show outro
-				# 		self.phase_forward()
-
-			# elif self.phase == 6:				# Feedback; only pratice block
-			# 	self.delay_4_time = clock.getTime()	
-			# 		if (self.delay_4_time - self.answer_time) > self.phase_durations[5]:
-			# 			self.stopped = True
-			# 			self.stop()
-			# 			return
-			
 			# events and draw:
 			self.event()
-			self.draw()
-						
-		# we have stopped:
-		# frame_timer.log_histogram()     
-		# self.stop()
-
+					
 
 class DetectSession(Session):
 	def __init__(self, subject_nr, nr_trials, block_length, index_number=1):
@@ -362,7 +302,9 @@ class DetectSession(Session):
 		trial_counter = 0
 		self.total_duration = 0
 
-		phase_durs = [-0.01, 0.5, 0.024, 0.072, 0.75, 1.2]
+		# phase_durs = [-0.01, 0.5, 0.024, 0.072, 0.75, 1.2]
+		# phases in frames (except for phase 0 and 5)
+		phase_durs = [-0.01, 60, 2, 6, 90, 1.2]
 
 		# Loop over all trials
 		for i in range(int(self.nr_trials/self.valid_cue.shape[0])):
