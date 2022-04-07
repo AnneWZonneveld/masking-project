@@ -176,7 +176,7 @@ class DetectTrial(Trial):
 							self.parameters['correct'] = 1
 						else:
 							self.parameters['correct'] = 0
-						self.parameters['RT'] = self.answer_time - self.wait_time
+						self.parameters['RT'] = self.parameters['response_time'] - self.parameters['probe_onset']
 						if self.ID != (self.session.nr_trials - 1):
 							self.stopped = True
 							self.stop()
@@ -193,7 +193,7 @@ class DetectTrial(Trial):
 							self.parameters['correct'] = 1
 						else:
 							self.parameters['correct'] = 0
-						self.parameters['RT'] = self.answer_time - self.wait_time
+						self.parameters['RT'] = self.parameters['response_time'] - self.parameters['probe_onset']
 						if self.ID != (self.session.nr_trials - 1):
 							self.stopped = True
 							self.stop()
@@ -205,6 +205,8 @@ class DetectTrial(Trial):
 	def run(self):
 		super(DetectTrial, self).run()
 
+		phase_5_counter = 0
+		
 		while not self.stopped:
 
 			self.run_time = clock.getTime() - self.start_time
@@ -260,16 +262,17 @@ class DetectTrial(Trial):
 					self.screen.flip()
 
 				if frameN == int(self.phase_durations[4])-1:
+					# self.wait_time = clock.getTime()
 					self.phase_forward()
 
 			elif self.phase == 5:   #Probe, Aborted at key response (a or l)
 				print('phase 5')
-				counter = 0
 				self.probe.draw()
 				self.instruction.draw()
-				if counter == 0:
+				if phase_5_counter == 0:
+					print('counter = 0')
 					self.parameters.update({'probe_onset': clock.getTime() - self.session.start_time})
-				counter += 1
+				phase_5_counter += 1
 				self.screen.flip()
 
 			# events and draw:
