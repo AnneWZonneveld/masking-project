@@ -7,8 +7,13 @@ from IPython import embed as shell
 
 new_wd = "/Users/onderzoekl210/Desktop/Anne/masking-project"
 old_wd = wd = "/Users/AnneZonneveld/Documents/STAGE/masking-project/"
+practice = True
 
-old_file = os.path.join(os.path.join(old_wd, 'help_files'), 'selection_THINGS.csv')
+if practice == True:
+    old_file = os.path.join(os.path.join(old_wd, 'help_files'), 'selection_THINGS_practice.csv')
+else:
+    old_file = os.path.join(os.path.join(old_wd, 'help_files'), 'selection_THINGS.csv')
+
 old_df = pd.read_csv(old_file, sep=',', header=0)
 
 columns = ['ImageID','concept','category', 'mask_type', 'mask_path']
@@ -37,4 +42,8 @@ for i in range(len(old_df)):
 # Export 
 new_df = new_df.reset_index()
 new_df = new_df.drop(columns=['index'])
-new_df.to_csv(os.path.join(wd, 'help_files', f'selection_THINGS_{lab}.csv')) 
+
+if practice == True:
+    new_df.to_csv(os.path.join(wd, 'help_files', f'selection_THINGS_practice_{lab}.csv')) 
+else:   
+    new_df.to_csv(os.path.join(wd, 'help_files', f'selection_THINGS_{lab}.csv')) 
