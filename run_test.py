@@ -17,13 +17,15 @@ import pandas as pd
 import random
 import scipy
 from psychopy import logging, visual, clock, event, core
+from psychopy.core import Clock
 from psychopy.tools.attributetools import attributeSetter, setAttribute
 from psychopy.visual import GratingStim, TextStim, ImageStim, NoiseStim, DotStim, Window, TextBox2
 from PIL import Image
 
 # sys.path.append(os.path.join('C:\\', 'Users', 'onderzoekl210','Desktop', 'Anne', 'masking-project', 'exptools'))
-wd = '/Users/AnneZonneveld/Documents/STAGE/masking-project/'
+# wd = '/Users/AnneZonneveld/Documents/STAGE/masking-project/'
 # wd = os.path.join('C:\\','Users', 'onderzoekl210','Desktop', 'Anne', 'masking-project')
+wd = os.path.join('D:\\', 'Anne', 'masking-project')
 
 log_dir = os.path.join(wd, 'logfiles')
 if not os.path.exists(log_dir):
@@ -80,6 +82,7 @@ class DetectTrial(Trial):
 		self.categories = categories
 		self.block = np.floor(self.ID/self.session.block_length)
 		self.create_stimuli()
+		self.probe_drawn = False
 
 		if self.ID == 0:
 			self.session_start_time = clock.getTime()
@@ -89,13 +92,13 @@ class DetectTrial(Trial):
 		self.parameters.update({'answer' :  -1,
 								'correct': -1,
 								'block': self.block,
-								'RT' : 0,
-								'target_onset': 0,
-								'target_offset': 0, 
-								'mask_onset': 0,
-								'mask_offset': 0, 
-								'probe_onset': 0,
-								'response_time': 0
+								'RT' : 0
+								# 'target_onset': 0,
+								# 'target_offset': 0, 
+								# 'mask_onset': 0,
+								# 'mask_offset': 0, 
+								# 'probe_onset': 0,
+								# 'response_time': 0
 								})
 		
 
@@ -183,14 +186,15 @@ class DetectTrial(Trial):
 
 				elif ev == 'l':
 					self.session.events.append([1,clock.getTime()-self.start_time])
-					if self.phase == 5:
+					if self.phase == 5 and self.probe_drawn == True:
 						# yes 
 						self.parameters.update({'answer':1, 'response_time': clock.getTime()-self.session.start_time})
 						if self.parameters['valid_cue'] == self.parameters['answer']:
 							self.parameters['correct'] = 1
 						else:
 							self.parameters['correct'] = 0
-						self.parameters['RT'] = self.parameters['response_time'] - self.parameters['probe_onset']
+						# self.parameters['RT'] = self.parameters['response_time'] - self.parameters['probe_onset']
+						self.parameters['RT'] = self.responseClock.getTime()
 						if self.ID != (self.session.nr_trials - 1):
 							self.stopped = True
 							self.stop()
@@ -201,14 +205,15 @@ class DetectTrial(Trial):
 
 				elif ev == 'a':
 					self.session.events.append([1,clock.getTime()-self.start_time])
-					if self.phase == 5:
+					if self.phase == 5 and self.probe_drawn==True:
 						# no
 						self.parameters.update({'answer':0, 'response_time': clock.getTime()-self.session.start_time})
 						if self.parameters['valid_cue'] == self.parameters['answer']:
 							self.parameters['correct'] = 1
 						else:
 							self.parameters['correct'] = 0
-						self.parameters['RT'] = self.parameters['response_time'] - self.parameters['probe_onset']
+						# self.parameters['RT'] = self.parameters['response_time'] - self.parameters['probe_onset']
+						self.parameters['RT'] = self.responseClock.getTime()
 						if self.ID != (self.session.nr_trials - 1):
 							self.stopped = True
 							self.stop()
@@ -222,13 +227,17 @@ class DetectTrial(Trial):
 		super(DetectTrial, self).run()
 
 		phase_5_counter = 0
+		self.responseClock = Clock()
 
 		while not self.stopped:
 
-			self.run_time = clock.getTime() - self.start_time
+			# self.run_time = clock.getTime() - self.start_time
 
 			if self.phase == 0:
 				print('phase 0')
+
+				# runClock = Clock()
+				# runClock.reset()
 				
 				if self.ID == 0 or self.ID % self.session.block_length == 0:
 					print('FTIB')
@@ -236,11 +245,16 @@ class DetectTrial(Trial):
 					self.screen.flip()
 				else:
 					self.phase_forward()
+
 					
 			elif self.phase == 1:  # pre-stim cue; phase is timed
 				print('phase 1')
+				prestimClock = Clock()
 				self.fixation.color = 'black'
 				for frameN in range(int(self.phase_durations[1])):
+					if frameN == 0:
+						self.screen.callOnFlip(prestimClock.reset)
+						
 					self.fixation.draw()
 					self.screen.flip()
 
@@ -249,47 +263,69 @@ class DetectTrial(Trial):
 
 			elif self.phase == 2:  # image presentation; phase is timed
 				print('phase 2')
+				imageClock = Clock()
 				for frameN in range(int(self.phase_durations[2])):
+					if frameN == 0:	
+						# self.parameters['target_onset'] = self.screen.callOnFlip(runClock.getTime)
+						self.screen.callOnFlip(imageClock.reset)
 					self.image_stim.draw()
-					if frameN == 0:
-						self.parameters.update({'target_onset': clock.getTime() - self.session.start_time})
 					self.screen.flip()
+					if frameN == 0:
+					# 	# self.parameters.update({'target_onset': clock.getTime() - self.session.start_time})
+						self.parameters.update({'prestim_dur': prestimClock.getTime()})
 
 				if frameN == int(self.phase_durations[2]) - 1:
-					self.parameters.update({'target_offset': clock.getTime() - self.session.start_time})
+					# self.parameters.update({'target_offset': clock.getTime() - self.session.start_time})
 					self.phase_forward()
 								
 			elif self.phase == 3: # mask presentation; phase is timed
 				print('phase 3')
+				maskClock = Clock()
 				for frameN in range(int(self.phase_durations[3])):
-					self.mask_stim.draw()
 					if frameN == 0:
-						self.parameters.update({'mask_onset': clock.getTime() - self.session.start_time})
+						# self.screen.callOnFlip(self.parameters.update({'image_dur': prestimClock.getTime()}))
+						# self.parameters['target_offset'] = self.screen.callOnFlip(runClock.getTime)
+						# self.parameters['mask_onset'] = self.screen.callOnFlip(runClock.getTime)
+						self.screen.callOnFlip(maskClock.reset)
+					self.mask_stim.draw()
 					self.screen.flip()
+					if frameN == 0:
+						self.parameters.update({'image_dur': imageClock.getTime()})
+						# self.parameters.update({'mask_onset': clock.getTime() - self.session.start_time})
 
 				if frameN == int(self.phase_durations[3]) - 1:
-					self.parameters.update({'mask_offset': clock.getTime() - self.session.start_time})
+					# self.parameters.update({'mask_offset': clock.getTime() - self.session.start_time})
 					self.phase_forward()
 
 			elif self.phase == 4: # wait; blank screen; phase timed
 				print('phase 4')
+				waitClock = Clock()
 				for frameN in range(int(self.phase_durations[4])):
+					if frameN == 0:
+						# self.screen.callOnFlip(self.parameters.update({'mask_dur': prestimClock.getTime()}))
+						# self.parameters['mask_offset'] = self.screen.callOnFlip(runClock.getTime)
+						self.screen.callOnFlip(waitClock.reset)
 					self.fixation.draw()
 					self.screen.flip()
+					if frameN == 0:
+						self.parameters.update({'mask_dur': maskClock.getTime()})
 
 				if frameN == int(self.phase_durations[4])-1:
 					# self.wait_time = clock.getTime()
 					self.phase_forward()
 
 			elif self.phase == 5:   #Probe, Aborted at key response (a or l)
-				print('phase 5')
+				print('phase 5')		
 				self.probe.draw()
 				self.instruction.draw()
 				if phase_5_counter == 0:
 					# print('counter = 0')
-					self.parameters.update({'probe_onset': clock.getTime() - self.session.start_time})
+					# self.parameters.update({'probe_onset': clock.getTime() - self.session.start_time})
+					self.screen.callOnFlip(self.responseClock.reset)
+					self.parameters.update({'wait_dur': waitClock.getTime()})
 				phase_5_counter += 1
 				self.screen.flip()
+				self.probe_drawn = True
 			
 			elif self.phase == 6:   #Probe, Aborted at key response (a or l)
 				print('phase 6')
@@ -364,7 +400,7 @@ class DetectSession(Session):
 		if self.practice == False:
 			self.trial_file = trial_file
 			self.create_output_filename() # standard function?
-			phase_durs = [-0.01, 60, 2, 6, 90, 1.2]
+			phase_durs = [-0.01, 60, 3, 9, 90, 1.2]
 		if self.practice == True:
 			self.trial_file = trial_file_practice
 			phase_durs = [-0.01, 60, 10, 30, 90, 1.2]
@@ -476,7 +512,7 @@ if __name__ == '__main__':
 	subject_nr = 0
     #subject_nr = str(input("Participant nr: "))
 
-	index_number = 1
+	index_number = 2
     #index_number = int(input("Which run: ")) 
 
 	log_filename = os.path.join(log_dir, "s{}_r{}".format(subject_nr, index_number))
