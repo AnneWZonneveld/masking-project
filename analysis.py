@@ -13,6 +13,8 @@ import shutil
 import numpy as np
 import seaborn as sns
 import pandas as pd 
+import pickle as pkl
+import joblib
 import matplotlib.pyplot as plt
 from scipy import stats
 from IPython import embed as shell
@@ -70,7 +72,7 @@ def move_images():
 
 
 def fit_PCA(n_components):
-    """Fit PCA on random not-experimental images of THINGS database"""
+    """Fit PCA on random non-experimental images of THINGS database"""
 
     # Find images to fit PCA - fit on 1000 random natural images
     image_base_dir = os.path.join(wd, 'image_base_non_exp')
@@ -151,15 +153,151 @@ def fit_PCA(n_components):
     fig.supylabel('Variance explained')
     fig.suptitle('Variance explained')
     fig.tight_layout()
-    filename = os.path.join(wd, 'analysis/scree_plot.png')
+    filename = os.path.join(wd, 'analysis/fit_scree_plot.png')
     fig.savefig(filename)
 
     del imgs
     
+    pkl.dump(pca_fits, open(os.path.join(wd, 'analysis/pca_fits.pkl'),"wb"))
+
     return PCA_fit_features, pca_fits
 
+def load_pca_fits():
+    pca_reload = pkl.load(open(os.path.join(wd, 'analysis/pca_fits.pkl'),'rb'))
+    return pca_reload
 
-def feature_extraction(pca_fits, n_components):
+def feature_extraction_animacy(pca_fits, n_components):
+    """Extract features using PCA for only experimental target images"""
+    from numpy.linalg import eigh
+    print("Extracting features")
+
+    # Create text file with all image paths
+    img_base = os.path.join(wd, 'stimuli/experiment/masks/1_natural')
+    img_paths = []
+    for path in all_targets:
+        img_path = os.path.join(os.path.join(img_base, path.split('/')[-2]), path.split('/')[-1])
+        img_paths.append(img_path)
+
+    df = pd.DataFrame (img_paths, columns = ['path'])
+    df.to_csv(os.path.join(wd, 'analysis', 'image_paths_animacy.csv')) 
+
+    # Feature extracting
+    return_nodes = {
+        # node_name: user-specified key for output dict
+        'relu': 'layer1',
+        'layer1.2.relu': 'layer2', 
+        'layer2.3.relu': 'layer3',
+        'layer3.5.relu': 'layer4', 
+        'layer4.2.relu': 'layer5'
+    }
+
+    feature_extractor = create_feature_extractor(model, return_nodes=return_nodes)
+    layers = ['layer1', 'layer2', 'layer3', 'layer4', 'layer5']
+
+    all_features = {
+        'layer1': np.zeros((len(img_paths), 64 * 112 * 112)),
+        'layer2': np.zeros((len(img_paths), 64 * 56 * 56)),
+        'layer3': np.zeros((len(img_paths), 128 * 28* 28)),
+        'layer4': np.zeros((len(img_paths), 256 * 14 * 14)),
+        'layer5': np.zeros((len(img_paths), 512 * 7 *7))
+    }
+
+    PCA_features = {
+        'layer1': np.zeros((len(img_paths), n_components)),
+        'layer2': np.zeros((len(img_paths), n_components)),
+        'layer3': np.zeros((len(img_paths), n_components)),
+        'layer4': np.zeros((len(img_paths), n_components)),
+        'layer5': np.zeros((len(img_paths), n_components))
+    }
+
+    # Loop through batches
+    nr_batches = 5
+    batches = np.linspace(0, len(img_paths), nr_batches + 1, endpoint=True, dtype=int)
+    
+    for b in range(nr_batches):
+        print('Processing batch ' + str(b + 1))
+
+        batch_size = batches[b+1] - batches[b]
+        imgs = np.zeros((batch_size, 3, 224, 224))
+
+        img_counter = 0 
+
+        # Loop through images batch
+        for i in range(batches[b], batches[b+1]):
+
+            if img_counter % 50 == 0:
+                print(f"Preprocessing image {img_counter}")
+
+            # Pre process image
+            img_path = img_paths[i]
+            img = np.asarray(Image.open(img_path))
+            img = transform(img)
+            img = img.reshape(1, 3, 224, 224)
+            imgs[img_counter, :, :, :] = img
+
+            img_counter += 1
+
+        # Extract features 
+        imgs = torch.from_numpy(imgs).type(torch.DoubleTensor)
+        feature_dict = feature_extractor(imgs)
+
+        # Add to all features
+        for layer in layers:   
+            features = np.reshape(feature_dict[layer].detach().numpy(),(feature_dict[layer].detach().numpy().shape[0], -1)) # flatten
+            pca = pca_fits[layer]
+            features_pca = pca.transform(features)
+            PCA_features[layer][batches[b]:batches[b+1], :] = features_pca
+
+        del features, features_pca, imgs
+    
+    total_variance = {}
+
+    # Save features + calc total variance
+    for layer in layers:
+        total_variance[layer]= pca_fits[layer].explained_variance_
+
+        output_dir = os.path.join(wd, f'analysis/animacy_features/{layer}')
+        features = PCA_features[layer]
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+        
+            with open(os.path.join(output_dir, 'features.npy'), 'wb') as f:
+                np.save(f, features)
+    
+    # Evaluate how the variance is distributed across the PCA components. 
+    fig, ax = plt.subplots(1,len(layers), sharey=True)
+    layer_nr = 0
+    for layer in layers:
+
+        # # Calc total variance not reduced features
+        # cov_matrix_all_features = np.cov(all_features[layer], rowvar=False)
+        # egnvalues, egnvectors = eigh(cov_matrix_all_features)
+        # total_egnvalues = sum(egnvalues)
+        # del cov_matrix_all_features, egnvalues, egnvectors
+
+        # # Calc explained variance rating PCA compenents
+        cov_matrix = np.cov(PCA_features[layer], rowvar=False)
+        egnvalues, egnvectors = eigh(cov_matrix)
+        total_var = total_variance[layer]
+        var_exp = [(i/total_var) for i in sorted(egnvalues, reverse=True)]
+
+        ax[layer_nr].plot(np.arange(n_components), var_exp, label=layer) # plot all different layers
+        ax[layer_nr].set_title(f'{layer} ' + str(round(np.sum(var_exp), 3)))
+        layer_nr += 1
+
+    fig.supxlabel('Component')
+    fig.supylabel('Variance explained')
+    fig.suptitle('Variance explained')
+    fig.tight_layout()
+    filename = os.path.join(wd, 'analysis/targets_scree_plot.png')
+    fig.savefig(filename)
+
+    shell()
+
+    return PCA_features
+
+
+def feature_extraction_exp(pca_fits, n_components):
     """Extract features using PCA for experimental images"""
     print("Extracting features")
 
@@ -188,7 +326,7 @@ def feature_extraction(pca_fits, n_components):
 
     # Create text file with all image paths
     df = pd.DataFrame (img_paths, columns = ['path'])
-    df.to_csv(os.path.join(wd, 'analysis', 'image_paths.csv')) 
+    df.to_csv(os.path.join(wd, 'analysis', 'image_paths_exp.csv')) 
 
     # Feature extracting
     return_nodes = {
@@ -253,7 +391,7 @@ def feature_extraction(pca_fits, n_components):
     
     # Save features
     for layer in layers:
-        output_dir = os.path.join(wd, f'analysis/features/{layer}')
+        output_dir = os.path.join(wd, f'analysis/exp_features/{layer}')
         features = PCA_features[layer]
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
@@ -263,11 +401,15 @@ def feature_extraction(pca_fits, n_components):
 
     return PCA_features
 
-def load_features():
+def load_features(atype = 'exp'): # add type argument
     layers = ['layer1', 'layer2', 'layer3', 'layer4', 'layer5']
 
     features = {}
-    output_dir = os.path.join(wd, f'analysis/features/')
+    if atype == 'exp':
+        output_dir = os.path.join(wd, f'analysis/exp_features/')
+    elif atype == 'animacy':
+        output_dir = os.path.join(wd, f'analysis/animacy_features/')
+
     for layer in layers:
         file = os.path.join(output_dir, f'{layer}/features.npy')
         features[layer] = np.load(file)
@@ -275,64 +417,107 @@ def load_features():
     return features
 
 
-def decode_animacy(exp_features):
-    from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-    from sklearn.model_selection import cross_val_score
+def decode_animacy(features):
+    """Decode animacy with logistic regression for only target images."""
+
+    from sklearn.model_selection import RepeatedKFold
+    from sklearn.model_selection import cross_val_score, cross_val_predict
+    from sklearn import metrics
     from sklearn.model_selection import LeaveOneOut
+    from sklearn.linear_model import LogisticRegressionCV
+    from sklearn.metrics import classification_report, confusion_matrix
 
     # Make labels
+    file_dir = os.path.join(wd, 'analysis', 'image_paths_animacy.csv')
+    image_paths = pd.read_csv(file_dir)['path'].tolist()
     concepts = pd.unique(concept_selection['concept']).tolist()
+    
     animacy_labels = []
-    for image in all_images:
-        if image.split('/')[-2] in concepts and image.split('/')[-3] == '1_natural':
+    for image in image_paths:
+        if image.split('/')[-2] in concepts:
             # 1 = animate, 0 = inanimate
             animacy_label = concept_selection[concept_selection['concept'] == image.split('/')[-2]]['animate'].values[0]
             animacy_labels.append(animacy_label)
-        else:
-            # 2 = other
-            animacy_labels.append(2)
 
     animacy_df = {}
     animacy_df['image'] = all_images
     animacy_df['animate'] = animacy_labels
-    animacy_df['features'] = exp_features['layer5']
+    animacy_df['features'] = features['layer5']
 
-    LDA_model = LinearDiscriminantAnalysis(n_components=2)
     X = animacy_df['features']
     y = np.asarray(animacy_df['animate'])
-    LDA_model.fit(X,y)
+    logit_model = LogisticRegressionCV().fit(X,y)
 
-    # cv = RepeatedStratifiedKFold(n_splits=10, n_repeats=3, random_state=1) # change params
-    cv = LeaveOneOut()
-    scores = cross_val_score(LDA_model, X, y, scoring='accuracy', cv=cv, n_jobs=-1)
+    cv = RepeatedKFold(n_splits=10, n_repeats=3 )# change params
+    scores = cross_val_score(logit_model, X, y, scoring='accuracy', cv=cv, n_jobs=-1)
 
     # summarize result
     print('Mean Accuracy: %.3f (%.3f)' % (np.mean(scores), np.std(scores)))
 
-    # Plot 
-    data_plot = LDA_model.transform(X)
-    target_names = ['inanimate', 'animate', 'other']
+    return (np.mean(scores), np.std(scores))
 
-    fig, ax = plt.subplots()
-    colors = ['red', 'green', 'blue']
-    lw = 2
-    for color, i, target_name in zip(colors, [0, 1, 2], target_names):
-        plt.scatter(data_plot[y == i, 0], data_plot[y == i, 1], alpha=.8, color=color,
-                    label=target_name)
-    plt.legend(loc='best', shadow=False, scatterpoints=1)
-    plt.title('LDA results')
-    fig.tight_layout()
-    filename = os.path.join(wd, 'analysis/LDA_results.png')
-    fig.savefig(filename)
+def inspect_predictions():
+    imagenet_file = os.path.join(wd, 'help_files/LOC_synset_mapping.txt')
+    with open(imagenet_file) as f:
+        imagenet_labels = [line.strip() for line in f.readlines()]
+    
+    img_base = os.path.join(wd, 'stimuli/experiment/masks/1_natural')
+    img_paths = []
+    for path in all_targets:
+        img_path = os.path.join(os.path.join(img_base, path.split('/')[-2]), path.split('/')[-1])
+        img_paths.append(img_path)
+    
+    things_labels = [path.split('/')[-2] for path in img_paths]
 
-    return
+    # Loop through batches
+    nr_batches = 5
+    batches = np.linspace(0, len(img_paths), nr_batches + 1, endpoint=True, dtype=int)
+    target_img_t = torch.DoubleTensor()
+    
+    for b in range(nr_batches):
+        print('Processing batch ' + str(b + 1))
 
-shell()
+        batch_size = batches[b+1] - batches[b]
+        imgs = np.zeros((batch_size, 3, 224, 224))
+
+        img_counter = 0 
+
+        # Loop through images batch
+        for i in range(batches[b], batches[b+1]):
+
+            if img_counter % 50 == 0:
+                print(f"Preprocessing image {img_counter}")
+
+            # Pre process image
+            img_path = img_paths[i]
+            img = np.asarray(Image.open(img_path))
+            img = transform(img)
+            img = img.reshape(1, 3, 224, 224)
+            imgs[img_counter, :, :, :] = img
+
+            img_counter += 1
+
+        imgs = torch.from_numpy(imgs).type(torch.DoubleTensor)
+        target_img_t = torch.cat((target_img_t, imgs), dim=0)
+    
+    outputs = model(target_img_t)
+    _, predicted = torch.max(outputs, 1)
+
+    for i in range(predicted.shape[0]):
+        print(f'Actual: {things_labels[i]}, predicted: {imagenet_labels[predicted[i]]}')
+
 
 def preprocess_bdata(): # to do 
+    """Files with duplicates:
+    - 10_3_2022-05-19_09.01.36 contains duplicates: 1 (index 2) --> checked
+    - 14_1_2022-05-17_09.16.37 contains duplicates: 7 (index 11) --> checked 
+    - 15_3_2022-05-19_09.01.13 contains duplicates: 2 (index 16)
+    - 3_1_2022-04-22_12.44.28 contains duplicates: 1 (index )
+    """
+    import joblib
 
     file_path = os.path.join(wd, 'data/')
-    files = glob.glob(os.path.join(file_path, '*.pkl'))
+    files = sorted(glob.glob(os.path.join(file_path, '*.pkl')))
     
     data = pd.DataFrame()
     for file in files:
@@ -375,14 +560,25 @@ def preprocess_bdata(): # to do
     masks_ordered = ['no_mask', '2_scrambled', '5_lines', '6_blocked', '4_geometric', '1_natural']
     data["mask_type"] = pd.Categorical(data["mask_type"], masks_ordered)
 
+    return data
+
 
 # MAIN
+
+# PCA fit
 n_components = 500
-pca_features, pca_fits = fit_PCA(n_components)
-exp_features = feature_extraction(pca_fits, n_components)
-# exp_features = load_features()
-decode_animacy(exp_features)
+# pca_features, pca_fits = fit_PCA(n_components)
+pca_fits = load_pca_fits()
 
+# Sanity check - decode animacy
+animacy_features = feature_extraction_animacy(pca_fits, n_components)
+# animacy_features = load_features(atype='animacy')
+animacy_perf = decode_animacy(animacy_features)
+# inspect_predictions()
 
+# Preprocess behavioural data
+bdata = preprocess_bdata()
 
-
+# Extract features all experimental images
+exp_features = feature_extraction_exp(pca_fits, n_components)
+#exp_features = load_features(atype='exp')
