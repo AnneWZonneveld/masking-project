@@ -119,7 +119,7 @@ def fit_PCA(n_components):
 
     # Extract features 
     imgs = torch.from_numpy(imgs).type(torch.DoubleTensor)
-    feature_dict_PCA = feature_extractor(imgs) #10 --> not enough RAM
+    feature_dict_PCA = feature_extractor(imgs) 
 
     layers = ['layer1', 'layer2', 'layer3', 'layer4', 'layer5']
 
@@ -194,14 +194,6 @@ def feature_extraction_animacy(pca_fits, n_components):
     feature_extractor = create_feature_extractor(model, return_nodes=return_nodes)
     layers = ['layer1', 'layer2', 'layer3', 'layer4', 'layer5']
 
-    all_features = {
-        'layer1': np.zeros((len(img_paths), 64 * 112 * 112)),
-        'layer2': np.zeros((len(img_paths), 64 * 56 * 56)),
-        'layer3': np.zeros((len(img_paths), 128 * 28* 28)),
-        'layer4': np.zeros((len(img_paths), 256 * 14 * 14)),
-        'layer5': np.zeros((len(img_paths), 512 * 7 *7))
-    }
-
     PCA_features = {
         'layer1': np.zeros((len(img_paths), n_components)),
         'layer2': np.zeros((len(img_paths), n_components)),
@@ -210,46 +202,97 @@ def feature_extraction_animacy(pca_fits, n_components):
         'layer5': np.zeros((len(img_paths), n_components))
     }
 
-    # Loop through batches
-    nr_batches = 5
-    batches = np.linspace(0, len(img_paths), nr_batches + 1, endpoint=True, dtype=int)
+    # # Loop through batches
+    # nr_batches = 5
+    # batches = np.linspace(0, len(img_paths), nr_batches + 1, endpoint=True, dtype=int)
     
-    for b in range(nr_batches):
-        print('Processing batch ' + str(b + 1))
+    # for b in range(nr_batches):
+    #     print('Processing batch ' + str(b + 1))
 
-        batch_size = batches[b+1] - batches[b]
-        imgs = np.zeros((batch_size, 3, 224, 224))
+    #     batch_size = batches[b+1] - batches[b]
+    #     imgs = np.zeros((batch_size, 3, 224, 224))
 
-        img_counter = 0 
+    #     img_counter = 0 
 
-        # Loop through images batch
-        for i in range(batches[b], batches[b+1]):
+    #     # Loop through images batch
+    #     for i in range(batches[b], batches[b+1]):
 
-            if img_counter % 50 == 0:
-                print(f"Preprocessing image {img_counter}")
+    #         if img_counter % 50 == 0:
+    #             print(f"Preprocessing image {img_counter}")
 
-            # Pre process image
-            img_path = img_paths[i]
-            img = np.asarray(Image.open(img_path))
-            img = transform(img)
-            img = img.reshape(1, 3, 224, 224)
-            imgs[img_counter, :, :, :] = img
+    #         # Pre process image
+    #         img_path = img_paths[i]
+    #         img = np.asarray(Image.open(img_path))
+    #         img = transform(img)
+    #         img = img.reshape(1, 3, 224, 224)
+    #         imgs[img_counter, :, :, :] = img
 
-            img_counter += 1
+    #         img_counter += 1
 
-        # Extract features 
-        imgs = torch.from_numpy(imgs).type(torch.DoubleTensor)
-        feature_dict = feature_extractor(imgs)
+    #     # Extract features 
+    #     imgs = torch.from_numpy(imgs).type(torch.DoubleTensor)
+    #     feature_dict = feature_extractor(imgs)
 
-        # Add to all features
-        for layer in layers:   
-            features = np.reshape(feature_dict[layer].detach().numpy(),(feature_dict[layer].detach().numpy().shape[0], -1)) # flatten
-            pca = pca_fits[layer]
-            features_pca = pca.transform(features)
-            PCA_features[layer][batches[b]:batches[b+1], :] = features_pca
+    imgs = np.zeros((len(img_paths), 3, 224, 224))
+    img_counter = 0 
+    for i in range(len(img_paths)):
+        if img_counter % 100 == 0:
+            print(f"Preprocessing image {img_counter}")
+        img_path = img_paths[i]
+        img = np.asarray(Image.open(img_path))
+        img = transform(img)
+        img = img.reshape(1, 3, 224, 224)
+        imgs[img_counter, :, :, :] = img
 
-        del features, features_pca, imgs
+        img_counter += 1
+
+    # Extract features 
+    imgs = torch.from_numpy(imgs).type(torch.DoubleTensor)
+    feature_dict_PCA = feature_extractor(imgs)
+
+        shell()
+
+        # # Add to all features
+        # for layer in layers:   
+        #     features = np.reshape(feature_dict[layer].detach().numpy(),(feature_dict[layer].detach().numpy().shape[0], -1)) # flatten
+        #     pca = pca_fits[layer]
+        #     features_pca = pca.transform(features)
+        #     PCA_features[layer][batches[b]:batches[b+1], :] = features_pca
+
+        # del features, features_pca, imgs
+
+            # Fit PCA --> seperately for every layer
     
+
+    pca_fits = {}
+
+    for layer in layers:
+        print(f"Fitting PCA {layer}")
+        pca = PCA(n_components=n_components) 
+        features = np.reshape(feature_dict_PCA[layer].detach().numpy(),(feature_dict_PCA[layer].detach().numpy().shape[0], -1)) # flatten
+        features_pca = pca.fit_transform(features)
+        PCA_features['layer'] = features_pca
+        pca_fits.update({f'{layer}': pca})
+        
+        del features, features_pca
+
+    # Evaluate how the variance is distributed across the PCA components. 
+    fig, ax = plt.subplots(1,len(layers), sharey=True)
+    layer_nr = 0
+    for layer in layers:
+        ax[layer_nr].plot(np.arange(n_components), pca_fits[layer].explained_variance_ratio_, label=layer) # plot all different layers
+        ax[layer_nr].set_title(f'{layer} ' + str(round(np.sum(pca_fits[layer].explained_variance_ratio_), 3)))
+        layer_nr += 1
+    fig.supxlabel('Component')
+    fig.supylabel('Variance explained')
+    fig.suptitle('Variance explained')
+    fig.tight_layout()
+    filename = os.path.join(wd, 'analysis/fit_scree_plot.png')
+    fig.savefig(filename)
+
+    del imgs
+
+
     total_variance = {}
 
     # Save features + calc total variance
@@ -278,7 +321,7 @@ def feature_extraction_animacy(pca_fits, n_components):
         # # Calc explained variance rating PCA compenents
         cov_matrix = np.cov(PCA_features[layer], rowvar=False)
         egnvalues, egnvectors = eigh(cov_matrix)
-        total_var = total_variance[layer]
+        total_var = np.sum(total_variance[layer])
         var_exp = [(i/total_var) for i in sorted(egnvalues, reverse=True)]
 
         ax[layer_nr].plot(np.arange(n_components), var_exp, label=layer) # plot all different layers
@@ -291,8 +334,6 @@ def feature_extraction_animacy(pca_fits, n_components):
     fig.tight_layout()
     filename = os.path.join(wd, 'analysis/targets_scree_plot.png')
     fig.savefig(filename)
-
-    shell()
 
     return PCA_features
 
