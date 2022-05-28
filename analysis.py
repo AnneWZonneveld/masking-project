@@ -119,7 +119,7 @@ def fit_PCA(n_components):
 
     # Extract features 
     imgs = torch.from_numpy(imgs).type(torch.DoubleTensor)
-    feature_dict_PCA = feature_extractor(imgs) 
+    feature_dict_PCA = feature_extractor(imgs) #10 --> not enough RAM
 
     layers = ['layer1', 'layer2', 'layer3', 'layer4', 'layer5']
 
@@ -168,8 +168,8 @@ def load_pca_fits():
 
 def feature_extraction_animacy(pca_fits, n_components):
     """Extract features using PCA for only experimental target images"""
-    from numpy.linalg import eigh
     print("Extracting features")
+    from numpy.linalg import eigh
 
     # Create text file with all image paths
     img_base = os.path.join(wd, 'stimuli/experiment/masks/1_natural')
@@ -194,6 +194,14 @@ def feature_extraction_animacy(pca_fits, n_components):
     feature_extractor = create_feature_extractor(model, return_nodes=return_nodes)
     layers = ['layer1', 'layer2', 'layer3', 'layer4', 'layer5']
 
+    all_features = {
+        'layer1': np.zeros((len(img_paths), 64, 112, 112)),
+        'layer2': np.zeros((len(img_paths), 64, 56, 56)),
+        'layer3': np.zeros((len(img_paths), 128, 28, 28)),
+        'layer4': np.zeros((len(img_paths), 256, 14, 14)),
+        'layer5': np.zeros((len(img_paths), 512, 7, 7))
+    }
+
     PCA_features = {
         'layer1': np.zeros((len(img_paths), n_components)),
         'layer2': np.zeros((len(img_paths), n_components)),
@@ -202,128 +210,79 @@ def feature_extraction_animacy(pca_fits, n_components):
         'layer5': np.zeros((len(img_paths), n_components))
     }
 
-    # # Loop through batches
-    # nr_batches = 5
-    # batches = np.linspace(0, len(img_paths), nr_batches + 1, endpoint=True, dtype=int)
+    # Loop through batches
+    nr_batches = 5
+    batches = np.linspace(0, len(img_paths), nr_batches + 1, endpoint=True, dtype=int)
     
-    # for b in range(nr_batches):
-    #     print('Processing batch ' + str(b + 1))
+    for b in range(nr_batches):
+        print('Processing batch ' + str(b + 1))
 
-    #     batch_size = batches[b+1] - batches[b]
-    #     imgs = np.zeros((batch_size, 3, 224, 224))
+        batch_size = batches[b+1] - batches[b]
+        imgs = np.zeros((batch_size, 3, 224, 224))
 
-    #     img_counter = 0 
+        img_counter = 0 
 
-    #     # Loop through images batch
-    #     for i in range(batches[b], batches[b+1]):
+        # Loop through images batch
+        for i in range(batches[b], batches[b+1]):
 
-    #         if img_counter % 50 == 0:
-    #             print(f"Preprocessing image {img_counter}")
+            if img_counter % 50 == 0:
+                print(f"Preprocessing image {img_counter}")
 
-    #         # Pre process image
-    #         img_path = img_paths[i]
-    #         img = np.asarray(Image.open(img_path))
-    #         img = transform(img)
-    #         img = img.reshape(1, 3, 224, 224)
-    #         imgs[img_counter, :, :, :] = img
+            # Pre process image
+            img_path = img_paths[i]
+            img = np.asarray(Image.open(img_path))
+            img = transform(img)
+            img = img.reshape(1, 3, 224, 224)
+            imgs[img_counter, :, :, :] = img
 
-    #         img_counter += 1
+            img_counter += 1
 
-    #     # Extract features 
-    #     imgs = torch.from_numpy(imgs).type(torch.DoubleTensor)
-    #     feature_dict = feature_extractor(imgs)
+        # Extract features 
+        imgs = torch.from_numpy(imgs).type(torch.DoubleTensor)
+        feature_dict = feature_extractor(imgs)
 
-    imgs = np.zeros((len(img_paths), 3, 224, 224))
-    img_counter = 0 
-    for i in range(len(img_paths)):
-        if img_counter % 100 == 0:
-            print(f"Preprocessing image {img_counter}")
-        img_path = img_paths[i]
-        img = np.asarray(Image.open(img_path))
-        img = transform(img)
-        img = img.reshape(1, 3, 224, 224)
-        imgs[img_counter, :, :, :] = img
+        # Add to all features
+        for layer in layers:  
+            all_features[layer][batches[b]:batches[b+1], :, :, :] =  feature_dict[layer].detach().numpy()
 
-        img_counter += 1
+            features = np.reshape(feature_dict[layer].detach().numpy(),(feature_dict[layer].detach().numpy().shape[0], -1)) # flatten
+            pca = pca_fits[layer]
+            features_pca = pca.transform(features)
+            PCA_features[layer][batches[b]:batches[b+1], :] = features_pca
 
-    # Extract features 
-    imgs = torch.from_numpy(imgs).type(torch.DoubleTensor)
-    feature_dict_PCA = feature_extractor(imgs)
+        del features, features_pca, imgs
 
-        shell()
-
-        # # Add to all features
-        # for layer in layers:   
-        #     features = np.reshape(feature_dict[layer].detach().numpy(),(feature_dict[layer].detach().numpy().shape[0], -1)) # flatten
-        #     pca = pca_fits[layer]
-        #     features_pca = pca.transform(features)
-        #     PCA_features[layer][batches[b]:batches[b+1], :] = features_pca
-
-        # del features, features_pca, imgs
-
-            # Fit PCA --> seperately for every layer
-    
-
-    pca_fits = {}
-
+    # Save features 
     for layer in layers:
-        print(f"Fitting PCA {layer}")
-        pca = PCA(n_components=n_components) 
-        features = np.reshape(feature_dict_PCA[layer].detach().numpy(),(feature_dict_PCA[layer].detach().numpy().shape[0], -1)) # flatten
-        features_pca = pca.fit_transform(features)
-        PCA_features['layer'] = features_pca
-        pca_fits.update({f'{layer}': pca})
-        
-        del features, features_pca
-
-    # Evaluate how the variance is distributed across the PCA components. 
-    fig, ax = plt.subplots(1,len(layers), sharey=True)
-    layer_nr = 0
-    for layer in layers:
-        ax[layer_nr].plot(np.arange(n_components), pca_fits[layer].explained_variance_ratio_, label=layer) # plot all different layers
-        ax[layer_nr].set_title(f'{layer} ' + str(round(np.sum(pca_fits[layer].explained_variance_ratio_), 3)))
-        layer_nr += 1
-    fig.supxlabel('Component')
-    fig.supylabel('Variance explained')
-    fig.suptitle('Variance explained')
-    fig.tight_layout()
-    filename = os.path.join(wd, 'analysis/fit_scree_plot.png')
-    fig.savefig(filename)
-
-    del imgs
-
-
-    total_variance = {}
-
-    # Save features + calc total variance
-    for layer in layers:
-        total_variance[layer]= pca_fits[layer].explained_variance_
 
         output_dir = os.path.join(wd, f'analysis/animacy_features/{layer}')
-        features = PCA_features[layer]
+        reduced_features = PCA_features[layer]
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
         
             with open(os.path.join(output_dir, 'features.npy'), 'wb') as f:
-                np.save(f, features)
+                np.save(f, reduced_features)
     
     # Evaluate how the variance is distributed across the PCA components. 
     fig, ax = plt.subplots(1,len(layers), sharey=True)
     layer_nr = 0
+    total_variance = {}
     for layer in layers:
 
-        # # Calc total variance not reduced features
-        # cov_matrix_all_features = np.cov(all_features[layer], rowvar=False)
-        # egnvalues, egnvectors = eigh(cov_matrix_all_features)
-        # total_egnvalues = sum(egnvalues)
-        # del cov_matrix_all_features, egnvalues, egnvectors
+        # Calc total variance non-reduced features
+        features_flat = np.reshape(all_features[layer],(all_features[layer].shape[0], -1))
+        var_per_feat = [np.var(features_flat[:, i]) for i in range(features_flat.shape[1])]
+        total_variance[layer] = np.sum(var_per_feat)
+        # total_variance[layer] = np.sum(pca_fits[layer].singular_values_)
 
-        # # Calc explained variance rating PCA compenents
-        cov_matrix = np.cov(PCA_features[layer], rowvar=False)
-        egnvalues, egnvectors = eigh(cov_matrix)
-        total_var = np.sum(total_variance[layer])
-        var_exp = [(i/total_var) for i in sorted(egnvalues, reverse=True)]
+        # Calc explained variance rating PCA compenents
+        var_per_comp = [np.var(PCA_features[layer][:, i]) for i in range(n_components)]
+        var_exp = [(i/total_variance[layer]) for i in var_per_comp]
 
+        # cov_matrix = np.cov(PCA_features[layer], rowvar=False)
+        # variances = np.diag(cov_matrix)
+        # var_exp = [(i/total_variance[layer]) for i in variances]
+    
         ax[layer_nr].plot(np.arange(n_components), var_exp, label=layer) # plot all different layers
         ax[layer_nr].set_title(f'{layer} ' + str(round(np.sum(var_exp), 3)))
         layer_nr += 1
@@ -334,6 +293,8 @@ def feature_extraction_animacy(pca_fits, n_components):
     fig.tight_layout()
     filename = os.path.join(wd, 'analysis/targets_scree_plot.png')
     fig.savefig(filename)
+
+    shell()
 
     return PCA_features
 
@@ -602,6 +563,32 @@ def preprocess_bdata(): # to do
     data["mask_type"] = pd.Categorical(data["mask_type"], masks_ordered)
 
     return data
+
+def logit_model(data, features):
+
+    file_dir = os.path.join(wd, 'analysis', 'image_paths_exp.csv')
+    image_paths = pd.read_csv(file_dir)['path'].tolist()
+    concepts = pd.unique(concept_selection['concept']).tolist()
+
+    trial_df = {}
+    for trial in len(trial_file):
+        # get target path
+        # get according activation
+        # get mask path
+        # get according activation
+        # get response for all participants (average?)
+
+
+    X = animacy_df['features']
+    y = np.asarray(animacy_df['animate'])
+    logit_model = LogisticRegressionCV().fit(X,y)
+
+    cv = RepeatedKFold(n_splits=10, n_repeats=3 )# change params
+    scores = cross_val_score(logit_model, X, y, scoring='accuracy', cv=cv, n_jobs=-1)
+
+    # summarize result
+    print('Mean Accuracy: %.3f (%.3f)' % (np.mean(scores), np.std(scores)))
+
 
 
 # MAIN
