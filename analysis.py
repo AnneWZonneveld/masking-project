@@ -425,7 +425,7 @@ def preprocess_bdata(): # to do
 
 def logit_model(data, features):
     from sklearn.linear_model import LogisticRegressionCV, LogisticRegression
-    from sklearn.metrics import f1_score
+    from sklearn.metrics import f1_score, classification_report
     from sklearn.model_selection import RepeatedKFold, StratifiedKFold, GridSearchCV, cross_validate, train_test_split
     import statsmodels.api as sm
     from sklearn import preprocessing
@@ -524,7 +524,7 @@ def logit_model(data, features):
     y = np.asarray(trial_df['response'])
     
     # Train / test split
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=0)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=0, stratify=y)
     scale = preprocessing.StandardScaler()
     X_train = scale.fit_transform(X_train)
     X_test = scale.transform(X_test) 
@@ -536,39 +536,36 @@ def logit_model(data, features):
     lr_basemodel.fit(X_train, y_train)
 
     # Train and test metrics
-    print(f"Train accuracy: {logit_model.score(X_train, y_train)}")
-    print(f"Test accuracy: {logit_model.score(X_test, y_test)}")
-    y_train_pred = logit_model.predict(X_train)
-    y_test_pred = logit_model.predict(X_test)
-    print(f"F1 score: {f1_score(y_train,y_train_pred)}")
-    print(f"F1 score: {f1_score(y_test,y_test_pred)}")
+    print(f"Train accuracy: {lr_basemodel.score(X_train, y_train)}")
+    print(f"Test accuracy: {lr_basemodel.score(X_test, y_test)}")
+    y_train_pred = lr_basemodel.predict(X_train)
+    y_test_pred = lr_basemodel.predict(X_test)
+    print(f"F1 train score: {f1_score(y_train,y_train_pred)}")
+    print(f"F1 test score: {f1_score(y_test,y_test_pred)}")
+    print(f"Classification report:")
+    print(f"{classification_report(y_test, y_test_pred)}")
 
-    #Hyperparameter tuning
-    lr=LogisticRegression()
-    weights = np.linspace(0.0,0.99,500)
+    # Hyperparameter tuning
+    lr=LogisticRegression(max_iter=5000)
+    weights = np.linspace(0.0,0.99,2)
     param= {'C': [0.1, 0.5, 1,10,15,20], 'penalty': ['l1', 'l2'],"class_weight":[{0:x ,1:1.0 -x} for x in weights]}
     folds = StratifiedKFold(n_splits = 5, shuffle = True, random_state = 42)
     
-    #Gridsearch 
+    # Gridsearch 
     grid_model= GridSearchCV(estimator= lr,param_grid=param,scoring="f1",cv=folds,return_train_score=True)
-    #train model to learn relationships between x and y
     grid_model.fit(X_train,y_train)
+    print(f"GridSearch best F1 score: {grid_model.best_score}")
+    best_params = grid_model.best_params
+    print(f"GridSearch best parameters score: {best_params}")
+
+    # Refit 
+    lr2=LogisticRegression(class_weight={0:0.27,1:0.73},C=20,penalty="l2")
+    lr2.fit(X_train,y_train)
+
+    lr2_pred = lr2_pred.predict(X_test)
+    print(f"Classification report:")
+    print(f"{classification_report(y_test, lr2_pred)}")
     
-
-    # print("Fit model")   
-    # logit_model = LogisticRegressionCV(max_iter=1000)
-
-    # print("Cross validation")
-    # cv = StratifiedKFold(n_splits=5)# change params
-    # cv_results = cross_validate(logit_model, X_scaled, y, scoring='accuracy', cv=cv, n_jobs=-1, return_train_score=True)
-    # scores = cross_val_score(logit_model, X_scaled, y, scoring='accuracy', cv=cv, n_jobs=-1)
-
-    test_scores = cv_results['test_score']
-    print(f"Test score: {cv_results['test_score']}")
-    print(f"Train score: {cv_results['train_score']}")
-
-    # summarize result
-    print('Mean Accuracy: %.3f (%.3f)' % (np.mean(test_scores), np.std(test_scores)))
 
     # Calculate noise ceiling
     participants = pd.unique(data['subject_nr'])
