@@ -74,21 +74,6 @@ def move_images():
 def fit_PCA(n_components):
     """Fit PCA on random non-experimental images of THINGS database"""
 
-    # Find images to fit PCA - fit on 1000 random natural images
-    image_base_dir = os.path.join(wd, 'image_base_non_exp')
-    folders = [f for f in os.listdir(image_base_dir) if not f.startswith('.')]
-    all_PCA_images = []
-    for folder in folders:
-        print(f"Processing folder {folder}")
-        concept_dir = os.path.join(image_base_dir, folder)
-        images = [f for f in os.listdir(concept_dir) if not f.startswith('.')]
-        image_paths = []
-        for image in images:
-            image_path = os.path.join(concept_dir, image)
-            image_paths.append(image_path)
-        all_PCA_images.append(image_paths)
-    all_PCA_images = [item for sublist in all_PCA_images for item in sublist] # flatten list --> 25366 images
-
     return_nodes = {
         # node_name: user-specified key for output dict
         'relu': 'layer1',
@@ -100,36 +85,39 @@ def fit_PCA(n_components):
 
     feature_extractor = create_feature_extractor(model, return_nodes=return_nodes)
 
-    # Preprocess images to fit PCA
-    n = 1000
-    i_rand = np.random.randint(0, len(all_PCA_images), n)
-
-    imgs = np.zeros((n, 3, 224, 224))
-    img_counter = 0 
-    for i in i_rand:
-        if img_counter % 100 == 0:
-            print(f"Preprocessing PCA image {img_counter}")
-        img_path = all_PCA_images[i]
+    # Preprocess all experimental images to fit PCA
+    n_images = len(all_images)
+    imgs = np.zeros((n_images, 3, 224, 224))
+    new_paths = []
+    for i in range(n_images):
+        if i % 100 == 0:
+            print(f"Preprocessing PCA image {i}")
+        img_path = all_images[i]
+        img_path = os.path.join(wd, img_path[53:])
+        new_paths.append(img_path)
         img = np.asarray(Image.open(img_path))
         img = transform(img)
         img = img.reshape(1, 3, 224, 224)
-        imgs[img_counter, :, :, :] = img
-
-        img_counter += 1
+        imgs[i, :, :, :] = img
+    
+    # Create text file with all image paths
+    df = pd.DataFrame (new_paths, columns = ['path'])
+    df.to_csv(os.path.join(wd, 'analysis', 'image_paths_exp.csv')) 
 
     # Extract features 
+    print(f"Extracting features")
     imgs = torch.from_numpy(imgs).type(torch.DoubleTensor)
-    feature_dict_PCA = feature_extractor(imgs) #10 --> not enough RAM
+    feature_dict_PCA = feature_extractor(imgs) 
 
     layers = ['layer1', 'layer2', 'layer3', 'layer4', 'layer5']
 
     # Fit PCA --> seperately for every layer
-    PCA_fit_features = {
-        'layer1': np.zeros((n, 64, 112, 112)),
-        'layer2': np.zeros((n, 64, 56, 56)),
-        'layer3': np.zeros((n, 128, 28, 28)),
-        'layer4': np.zeros((n, 256, 14, 14)),
-        'layer5': np.zeros((n, 512, 7, 7))
+    PCA_features = {
+        'layer1': np.zeros((n_images, n_components )),
+        'layer2': np.zeros((n_images, n_components )),
+        'layer3': np.zeros((n_images, n_components )),
+        'layer4': np.zeros((n_images, n_components )),
+        'layer5': np.zeros((n_images, n_components ))
     }
 
     pca_fits = {}
@@ -138,9 +126,12 @@ def fit_PCA(n_components):
         print(f"Fitting PCA {layer}")
         pca = PCA(n_components=n_components) 
         features = np.reshape(feature_dict_PCA[layer].detach().numpy(),(feature_dict_PCA[layer].detach().numpy().shape[0], -1)) # flatten
+        print(f"Tranforming features {layer}")
         features_pca = pca.fit_transform(features)
-        PCA_fit_features[layer] = features_pca
+        PCA_features[layer] = features_pca
         pca_fits.update({f'{layer}': pca})
+
+        del features, features_pca, pca
     
     # Evaluate how the variance is distributed across the PCA components. 
     fig, ax = plt.subplots(1,len(layers), sharey=True)
@@ -158,9 +149,11 @@ def fit_PCA(n_components):
 
     del imgs
     
+    print("Saving fits and features")
     pkl.dump(pca_fits, open(os.path.join(wd, 'analysis/pca_fits.pkl'),"wb"))
+    pkl.dump(PCA_features, open(os.path.join(wd, 'analysis/exp_features.pkl'),"wb"))
 
-    return PCA_fit_features, pca_fits
+    return PCA_features, pca_fits
 
 def load_pca_fits():
     pca_reload = pkl.load(open(os.path.join(wd, 'analysis/pca_fits.pkl'),'rb'))
@@ -169,7 +162,6 @@ def load_pca_fits():
 def feature_extraction_animacy(pca_fits, n_components):
     """Extract features using PCA for only experimental target images"""
     print("Extracting features")
-    from numpy.linalg import eigh
 
     # Create text file with all image paths
     img_base = os.path.join(wd, 'stimuli/experiment/masks/1_natural')
@@ -263,145 +255,8 @@ def feature_extraction_animacy(pca_fits, n_components):
             with open(os.path.join(output_dir, 'features.npy'), 'wb') as f:
                 np.save(f, reduced_features)
     
-    # Evaluate how the variance is distributed across the PCA components. 
-    fig, ax = plt.subplots(1,len(layers), sharey=True)
-    layer_nr = 0
-    total_variance = {}
-    for layer in layers:
-
-        # Calc total variance non-reduced features
-        features_flat = np.reshape(all_features[layer],(all_features[layer].shape[0], -1))
-        var_per_feat = [np.var(features_flat[:, i]) for i in range(features_flat.shape[1])]
-        total_variance[layer] = np.sum(var_per_feat)
-        # total_variance[layer] = np.sum(pca_fits[layer].singular_values_)
-
-        # Calc explained variance rating PCA compenents
-        var_per_comp = [np.var(PCA_features[layer][:, i]) for i in range(n_components)]
-        var_exp = [(i/total_variance[layer]) for i in var_per_comp]
-
-        # cov_matrix = np.cov(PCA_features[layer], rowvar=False)
-        # variances = np.diag(cov_matrix)
-        # var_exp = [(i/total_variance[layer]) for i in variances]
-    
-        ax[layer_nr].plot(np.arange(n_components), var_exp, label=layer) # plot all different layers
-        ax[layer_nr].set_title(f'{layer} ' + str(round(np.sum(var_exp), 3)))
-        layer_nr += 1
-
-    fig.supxlabel('Component')
-    fig.supylabel('Variance explained')
-    fig.suptitle('Variance explained')
-    fig.tight_layout()
-    filename = os.path.join(wd, 'analysis/targets_scree_plot.png')
-    fig.savefig(filename)
-
-    shell()
-
     return PCA_features
 
-
-def feature_extraction_exp(pca_fits, n_components):
-    """Extract features using PCA for experimental images"""
-    print("Extracting features")
-
-    # Find all experimental images 
-    img_dir = os.path.join(wd, 'analysis/images')
-    folders = [f for f in os.listdir(img_dir) if not f.startswith('.')]
-    img_paths = []
-    for folder in folders:
-        
-        folder_dir = os.path.join(img_dir, folder)
-
-        if folder in ['5_lines', '4_geometric']:
-            for path in os.listdir(folder_dir):
-                if not path.startswith('.'):
-                    img_path = os.path.join(folder_dir, path)
-                    img_paths.append(img_path)
-            
-        elif folder in ['1_natural', '2_scrambled', '6_blocked']:
-            concepts = os.listdir(folder_dir)
-            for concept in concepts:
-                concept_dir = os.path.join(folder_dir, concept)
-                for path in os.listdir(concept_dir):
-                    if not path.startswith('.'):
-                        img_path = os.path.join(concept_dir, path)
-                        img_paths.append(img_path)
-
-    # Create text file with all image paths
-    df = pd.DataFrame (img_paths, columns = ['path'])
-    df.to_csv(os.path.join(wd, 'analysis', 'image_paths_exp.csv')) 
-
-    # Feature extracting
-    return_nodes = {
-        # node_name: user-specified key for output dict
-        'relu': 'layer1',
-        'layer1.2.relu': 'layer2', 
-        'layer2.3.relu': 'layer3',
-        'layer3.5.relu': 'layer4', 
-        'layer4.2.relu': 'layer5'
-    }
-
-    feature_extractor = create_feature_extractor(model, return_nodes=return_nodes)
-    layers = ['layer1', 'layer2', 'layer3', 'layer4', 'layer5']
-
-    PCA_features = {
-        'layer1': np.zeros((len(img_paths), n_components)),
-        'layer2': np.zeros((len(img_paths), n_components)),
-        'layer3': np.zeros((len(img_paths), n_components)),
-        'layer4': np.zeros((len(img_paths), n_components)),
-        'layer5': np.zeros((len(img_paths), n_components))
-    }
-
-    # Loop through batches
-    nr_batches = 5
-    batches = np.linspace(0, len(img_paths), nr_batches + 1, endpoint=True, dtype=int)
-    
-    for b in range(nr_batches):
-        print('Processing batch ' + str(b + 1))
-
-        batch_size = batches[b+1] - batches[b]
-        imgs = np.zeros((batch_size, 3, 224, 224))
-
-        img_counter = 0 
-
-        # Loop through images batch
-        for i in range(batches[b], batches[b+1]):
-
-            if img_counter % 50 == 0:
-                print(f"Preprocessing image {img_counter}")
-
-            # Pre process image
-            img_path = img_paths[i]
-            img = np.asarray(Image.open(img_path))
-            img = transform(img)
-            img = img.reshape(1, 3, 224, 224)
-            imgs[img_counter, :, :, :] = img
-
-            img_counter += 1
-
-        # Extract features 
-        imgs = torch.from_numpy(imgs).type(torch.DoubleTensor)
-        feature_dict = feature_extractor(imgs)
-
-        # Add to all features
-        for layer in layers:   
-            features = np.reshape(feature_dict[layer].detach().numpy(),(feature_dict[layer].detach().numpy().shape[0], -1)) # flatten
-            pca = pca_fits[layer]
-            features_pca = pca.transform(features)
-            PCA_features[layer][batches[b]:batches[b+1], :] = features_pca
-
-        del features, features_pca, imgs
-    
-    # Save features
-    for layer in layers:
-        output_dir = os.path.join(wd, f'analysis/exp_features/{layer}')
-        features = PCA_features[layer]
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-        
-            with open(os.path.join(output_dir, 'features.npy'), 'wb') as f:
-                np.save(f, features)
-
-    return PCA_features
 
 def load_features(atype = 'exp'): # add type argument
     layers = ['layer1', 'layer2', 'layer3', 'layer4', 'layer5']
@@ -425,6 +280,7 @@ def decode_animacy(features):
     from sklearn.model_selection import RepeatedKFold
     from sklearn.model_selection import cross_val_score, cross_val_predict
     from sklearn import metrics
+    from sklearn import preprocessing
     from sklearn.model_selection import LeaveOneOut
     from sklearn.linear_model import LogisticRegressionCV
     from sklearn.metrics import classification_report, confusion_matrix
@@ -442,16 +298,18 @@ def decode_animacy(features):
             animacy_labels.append(animacy_label)
 
     animacy_df = {}
-    animacy_df['image'] = all_images
+    animacy_df['image'] = image_paths
     animacy_df['animate'] = animacy_labels
     animacy_df['features'] = features['layer5']
 
     X = animacy_df['features']
+    scaler = preprocessing.StandardScaler().fit(X)
+    X_scaled = scaler.transform(X)
     y = np.asarray(animacy_df['animate'])
-    logit_model = LogisticRegressionCV().fit(X,y)
+    logit_model = LogisticRegressionCV().fit(X_scaled,y)
 
     cv = RepeatedKFold(n_splits=10, n_repeats=3 )# change params
-    scores = cross_val_score(logit_model, X, y, scoring='accuracy', cv=cv, n_jobs=-1)
+    scores = cross_val_score(logit_model, X_scaled, y, scoring='accuracy', cv=cv, n_jobs=-1)
 
     # summarize result
     print('Mean Accuracy: %.3f (%.3f)' % (np.mean(scores), np.std(scores)))
@@ -564,49 +422,213 @@ def preprocess_bdata(): # to do
 
     return data
 
-def logit_model(data, features):
 
-    file_dir = os.path.join(wd, 'analysis', 'image_paths_exp.csv')
+def logit_model(data, features):
+    from sklearn.linear_model import LogisticRegressionCV, LogisticRegression
+    from sklearn.metrics import f1_score
+    from sklearn.model_selection import RepeatedKFold, StratifiedKFold, GridSearchCV, cross_validate, train_test_split
+    import statsmodels.api as sm
+    from sklearn import preprocessing
+
+    file_dir = os.path.join(wd, 'analysis', 'image_paths_exp.csv') # should be cc1
     image_paths = pd.read_csv(file_dir)['path'].tolist()
     concepts = pd.unique(concept_selection['concept']).tolist()
 
-    trial_df = {}
-    for trial in len(trial_file):
-        # get target path
-        # get according activation
-        # get mask path
-        # get according activation
-        # get response for all participants (average?)
+    n_trials = len(trial_file)
+    trial_df = pd.DataFrame()
+    # single_df = pd.DataFrame()
+   
+    no_mask = [i for i in range(len(trial_file)) if trial_file.iloc[i]['mask_type']=='no_mask']
+    n_mask_trials = n_trials - len(no_mask)
+    target_activations = np.zeros((n_mask_trials, n_components)) # later do more layers
+    mask_activations = np.zeros((n_mask_trials, n_components))
 
+    print("Creating trial df")
+    no_mask_id = 0
+    mask_trials = []
+    for i in range(len(trial_file)):
 
-    X = animacy_df['features']
-    y = np.asarray(animacy_df['animate'])
-    logit_model = LogisticRegressionCV().fit(X,y)
+        tmp = pd.DataFrame()
+        # tmp_single = pd.DataFrame()
 
-    cv = RepeatedKFold(n_splits=10, n_repeats=3 )# change params
-    scores = cross_val_score(logit_model, X, y, scoring='accuracy', cv=cv, n_jobs=-1)
+        trial = trial_file.iloc[i]
+        trial_id  = i
+
+        # Check if trial is mask trial
+        mask_path = trial['mask_path']
+
+        if mask_path != 'no_mask':
+            mask_trials.append(i)
+            
+            # get target path
+            target_path = trial['ImageID']
+            target_path = os.path.join(wd, target_path[53:])
+
+            # get according activations
+            target_index = image_paths.index(target_path)
+            target_activation = features['layer5'][target_index, :]
+            target_activations[no_mask_id, :] = target_activation
+        
+            # get mask path
+            mask_path = os.path.join(wd, mask_path[53:])
+
+            # get according activation
+            mask_index = image_paths.index(mask_path)
+            mask_activation = features['layer5'][target_index, :]
+            mask_activations[no_mask_id, :] = mask_activation
+
+            # get response for all participants (average?)
+            responses = data.groupby(['index'])['answer']
+            responses = data[data['index'] == trial_id]['answer'].tolist() #anwer or correct?
+            subject_nrs = data[data['index'] == trial_id]['subject_nr'].tolist()
+            mask_type = mask_path.split('/')[-3]
+
+            # tmp_single['trialID'] = trial_id
+            # tmp_single['target_path'] = target_path
+            # tmp_single['mask_path'] = mask_path
+            # tmp_single['mask_activation'] = mask_activation
+            # tmp_single['target_activation'] = target_activation
+
+            tmp['index'] = [trial_id for i in range(len(responses))]
+            tmp['response'] = responses
+            tmp['subject_nr'] = subject_nrs
+            tmp['target_path'] = [target_path for i in range(len(responses))]
+            tmp['mask_path'] = [mask_path for i in range(len(responses))]
+            tmp['mask_type'] = [mask_type for i in range(len(responses))]
+            tmp['mask_activation'] = [mask_activation for i in range(len(responses))]
+            tmp['target_activation'] = [target_activation for i in range(len(responses))]
+
+            trial_df = pd.concat([trial_df, tmp], ignore_index=True)
+            # single_df = pd.concat([single_df, tmp_single], ignore_index=True)
+
+            no_mask_id =+ 1
+
+    shell()
+
+    # Activations for all trials, all ppn
+    X1 = np.zeros((len(trial_df), target_activation.shape[0]))
+    X2 = np.zeros((len(trial_df), mask_activation.shape[0]))
+
+    for i in range(len(trial_df)):
+        X1[i, :] = trial_df['target_activation'].iloc[i]
+        X2[i, :] = trial_df['mask_activation'].iloc[i]
+    X = np.concatenate((X1, X2), axis=1)
+    scaler = preprocessing.StandardScaler().fit(X)
+    X_scaled = scaler.transform(X)
+
+    # Activations for unique trials
+    X_single = np.concatenate((target_activations, mask_activations), axis=1)
+    scaler = preprocessing.StandardScaler().fit(X_single)
+    X_single_scaled = scaler.transform(X_single)
+
+    y = np.asarray(trial_df['response'])
+    
+    # Train / test split
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=0)
+    scale = preprocessing.StandardScaler()
+    X_train = scale.fit_transform(X_train)
+    X_test = scale.transform(X_test) 
+
+    # Check for imbalance
+    pd.Series(y_train).value_counts(normalize=True) # --> 0: 0.86, 1:0.14
+
+    lr_basemodel = LogisticRegression(max_iter=5000, class_weight={0:0.14, 1:0.86})
+    lr_basemodel.fit(X_train, y_train)
+
+    # Train and test metrics
+    print(f"Train accuracy: {logit_model.score(X_train, y_train)}")
+    print(f"Test accuracy: {logit_model.score(X_test, y_test)}")
+    y_train_pred = logit_model.predict(X_train)
+    y_test_pred = logit_model.predict(X_test)
+    print(f"F1 score: {f1_score(y_train,y_train_pred)}")
+    print(f"F1 score: {f1_score(y_test,y_test_pred)}")
+
+    #Hyperparameter tuning
+    lr=LogisticRegression()
+    weights = np.linspace(0.0,0.99,500)
+    param= {'C': [0.1, 0.5, 1,10,15,20], 'penalty': ['l1', 'l2'],"class_weight":[{0:x ,1:1.0 -x} for x in weights]}
+    folds = StratifiedKFold(n_splits = 5, shuffle = True, random_state = 42)
+    
+    #Gridsearch 
+    grid_model= GridSearchCV(estimator= lr,param_grid=param,scoring="f1",cv=folds,return_train_score=True)
+    #train model to learn relationships between x and y
+    grid_model.fit(X_train,y_train)
+    
+
+    # print("Fit model")   
+    # logit_model = LogisticRegressionCV(max_iter=1000)
+
+    # print("Cross validation")
+    # cv = StratifiedKFold(n_splits=5)# change params
+    # cv_results = cross_validate(logit_model, X_scaled, y, scoring='accuracy', cv=cv, n_jobs=-1, return_train_score=True)
+    # scores = cross_val_score(logit_model, X_scaled, y, scoring='accuracy', cv=cv, n_jobs=-1)
+
+    test_scores = cv_results['test_score']
+    print(f"Test score: {cv_results['test_score']}")
+    print(f"Train score: {cv_results['train_score']}")
 
     # summarize result
-    print('Mean Accuracy: %.3f (%.3f)' % (np.mean(scores), np.std(scores)))
+    print('Mean Accuracy: %.3f (%.3f)' % (np.mean(test_scores), np.std(test_scores)))
+
+    # Calculate noise ceiling
+    participants = pd.unique(data['subject_nr'])
+    nr_participants = len(participants)
+    noiseLower = np.zeros(nr_participants)
+    noiseHigher = np.zeros(nr_participants)
+    
+    GA_response = trial_df.groupby(['index'])['response'].mean()
+
+    for i in range(nr_participants):
+        sub = participants[i]
+        sub_data = trial_df[trial_df['subject_nr']==sub]
+        sub_mean_response = sub_data.groupby(['index'])['response'].mean()
+        noiseHigher[i] = stats.spearmanr(sub_mean_response, GA_response)[0]
+
+        selection = np.ones(nr_participants,dtype=bool)
+        selection[i] = 0
+        subs_without = participants[selection]
+        sub_without_data = trial_df[trial_df['subject_nr'].isin(subs_without)]
+        GA_without_response = sub_without_data.groupby(['index'])['response'].mean()
+        noiseLower[i] = stats.spearmanr(sub_mean_response, GA_without_response)[0]
+
+    noiseCeiling = {}
+    noiseCeiling['UpperBound'] = np.mean(noiseHigher, axis=0)
+    noiseCeiling['LowerBound'] = np.mean(noiseLower, axis=0)
+
+    # Relate predictions back to noise ceiling
+    predictions = logit_model.predict(X_scaled)
+    prediction_probs = logit_model.predict_proba(X_scaled)
+    # trial_df['prediction'] = predictions
+    # model_mean_response = trial_df.groupby(['index'])['prediction'].mean()
+    report_chance = prediction_probs[:, 1]
+    trial_df['report_chance'] = report_chance
+    mean_report_chance = trial_df.groupby(['index'])['report_chance'].mean()
+    model_cor = stats.spearmanr(mean_report_chance, GA_response)[0]
+
+    # Alternative; more stats info
+    logit_model1 = sm.Logit(y, X_scaled) #inversion error
+    results = logit_model1.fit()
+    results.summary()
 
 
-
-# MAIN
+# --------------- MAIN
 
 # PCA fit
 n_components = 500
-# pca_features, pca_fits = fit_PCA(n_components)
-pca_fits = load_pca_fits()
+# exp_features, pca_fits = fit_PCA(n_components)
+# pca_fits = load_pca_fits()
 
 # Sanity check - decode animacy
-animacy_features = feature_extraction_animacy(pca_fits, n_components)
+# animacy_features = feature_extraction_animacy(pca_fits, n_components)
 # animacy_features = load_features(atype='animacy')
-animacy_perf = decode_animacy(animacy_features)
+# animacy_perf = decode_animacy(animacy_features)
 # inspect_predictions()
 
 # Preprocess behavioural data
 bdata = preprocess_bdata()
 
 # Extract features all experimental images
-exp_features = feature_extraction_exp(pca_fits, n_components)
-#exp_features = load_features(atype='exp')
+exp_features = load_features(atype='exp')
+
+# Set up log regression model
+logit_model(bdata, exp_features)
