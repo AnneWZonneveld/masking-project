@@ -427,6 +427,8 @@ def logit_model(data, features):
     from sklearn.linear_model import LogisticRegressionCV, LogisticRegression
     from sklearn.metrics import f1_score, classification_report
     from sklearn.model_selection import RepeatedKFold, StratifiedKFold, GridSearchCV, cross_validate, train_test_split
+    from sklearn.utils.class_weight import compute_class_weight
+    from sklearn.pipeline import make_pipeline
     import statsmodels.api as sm
     from sklearn import preprocessing
 
@@ -513,43 +515,36 @@ def logit_model(data, features):
         X1[i, :] = trial_df['target_activation'].iloc[i]
         X2[i, :] = trial_df['mask_activation'].iloc[i]
     X = np.concatenate((X1, X2), axis=1)
-    scaler = preprocessing.StandardScaler().fit(X)
-    X_scaled = scaler.transform(X)
-
-    # Activations for unique trials
-    X_single = np.concatenate((target_activations, mask_activations), axis=1)
-    scaler = preprocessing.StandardScaler().fit(X_single)
-    X_single_scaled = scaler.transform(X_single)
-
     y = np.asarray(trial_df['response'])
-    
-    # Train / test split
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=0, stratify=y)
-    scale = preprocessing.StandardScaler()
-    X_train = scale.fit_transform(X_train)
-    X_test = scale.transform(X_test) 
-
-    # Check for imbalance
-    pd.Series(y_train).value_counts(normalize=True) # --> 0: 0.86, 1:0.14
-
-    lr_basemodel = LogisticRegression(max_iter=5000, class_weight={0:0.14, 1:0.86})
-    lr_basemodel.fit(X_train, y_train)
-
-    # Train and test metrics
-    print(f"Train accuracy: {lr_basemodel.score(X_train, y_train)}")
-    print(f"Test accuracy: {lr_basemodel.score(X_test, y_test)}")
-    y_train_pred = lr_basemodel.predict(X_train)
-    y_test_pred = lr_basemodel.predict(X_test)
-    print(f"F1 train score: {f1_score(y_train,y_train_pred)}")
-    print(f"F1 test score: {f1_score(y_test,y_test_pred)}")
-    print(f"Classification report:")
-    print(f"{classification_report(y_test, y_test_pred)}")
 
     # Hyperparameter tuning
-    lr=LogisticRegression(max_iter=5000)
-    weights = np.linspace(0.0,0.99,2)
-    param= {'C': [0.1, 0.5, 1,10,15,20], 'penalty': ['l1', 'l2'],"class_weight":[{0:x ,1:1.0 -x} for x in weights]}
+    lr_basemodel = LogisticRegression(max_iter=5000)
+    pipeline = make_pipeline(preprocessing.StandardScaler(), lr_basemodel)
+    class_weights = compute_class_weight(class_weight='balanced', classes=np.array([0,1]), y=y)
+    class_weights = np.array([class_weights[0]/sum(class_weights), class_weights[1]/sum(class_weights)])
+    weight_seq = np.linspace(class_weights[0]-0.1, class_weights[0]+0.1,5)
+    param_grid= {'logisticregression__C': [0.5, 1, 10, 15], 'logisticregression__penalty': ['l1', 'l2'], 'logisticregression__class_weight': [{0:x ,1:1.0 -x} for x in weight_seq]}
     folds = StratifiedKFold(n_splits = 5, shuffle = True, random_state = 42)
+    scoring = ['accuracy', 'f1', 'precision', 'recall']
+
+    gs = GridSearchCV(
+        estimator=pipeline,
+        param_grid=param_grid,
+        scoring=scoring,
+        refit="f1",
+        n_jobs=-1,
+        return_train_score=True,
+    )
+
+    gs.fit(X, y)
+    results = gs.cv_results_
+
+    # for every score
+    best_index = np.where(results['rank_test_f1'] == 1)
+    best_score = results['mean_test_f1'][best_index]
+    best_params = results['params'][best_index]
+
+
     
     # Gridsearch 
     grid_model= GridSearchCV(estimator= lr,param_grid=param,scoring="f1",cv=folds,return_train_score=True)
@@ -565,9 +560,39 @@ def logit_model(data, features):
     lr2_pred = lr2_pred.predict(X_test)
     print(f"Classification report:")
     print(f"{classification_report(y_test, lr2_pred)}")
-    
 
-    # Calculate noise ceiling
+    clf = make_pipeline(preprocessing.StandardScaler(), lr_basemodel)
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=0)
+    scoring = ['accuracy', 'f1', 'precision', 'recall']
+    scores = cross_validate(clf, X, y, scoring=scoring, cv=cv, return_estimator=True)
+    mean_scores = {
+                'accuracy': np.mean(scores['test_accuracy']), 
+                'f1': np.mean(scores['test_f1']),
+                'precision': np.mean(scores['test_precision']),
+                'recall': np.mean(scores['test_recall'])
+    }
+
+    
+    # # Train / test split --> use in evaluation set
+    # X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=0, stratify=y)
+    # scale = preprocessing.StandardScaler()
+    # X_train = scale.fit_transform(X_train)
+    # X_test = scale.transform(X_test) 
+
+    # # Check for imbalance
+    # pd.Series(y_train).value_counts(normalize=True) # --> 0: 0.86, 1:0.14
+
+    # Train and test metrics 
+    print(f"Train accuracy: {lr_basemodel.score(X_train, y_train)}")
+    print(f"Test accuracy: {lr_basemodel.score(X_test, y_test)}")
+    y_train_pred = lr_basemodel.predict(X_train)
+    y_test_pred = lr_basemodel.predict(X_test)
+    print(f"F1 train score: {f1_score(y_train,y_train_pred)}")
+    print(f"F1 test score: {f1_score(y_test,y_test_pred)}")
+    print(f"Classification report:")
+    print(f"{classification_report(y_test, y_test_pred)}")
+
+    # Calculate noise ceiling --> evaluation test data?
     participants = pd.unique(data['subject_nr'])
     nr_participants = len(participants)
     noiseLower = np.zeros(nr_participants)
