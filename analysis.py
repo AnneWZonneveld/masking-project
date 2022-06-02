@@ -14,6 +14,7 @@ import numpy as np
 import seaborn as sns
 import pandas as pd 
 import pickle as pkl
+import json
 import joblib
 import matplotlib.pyplot as plt
 from scipy import stats
@@ -69,6 +70,22 @@ def move_images():
 
         if os.path.isfile(image):
             shutil.copy(image, destination)
+
+def serialize(data):
+    if isinstance(data, type):
+        return {"py/numpy.type": data.__name__}
+    if isinstance(data, np.integer):
+        return {"py/numpy.int": int(data)}
+    if isinstance(data, np.float):
+        return {"py/numpy.float": data.hex()}
+
+def deserialize(data):
+    if "py/numpy.type" in dct:
+        return np.dtype(dct["py/numpy.type"]).type
+    if "py/numpy.int" in dct:
+        return np.int32(dct["py/numpy.int"])
+    if "py/numpy.float" in dct:
+        return np.float64.fromhex(dct["py/numpy.float"])
 
 
 def fit_PCA(n_components):
@@ -422,15 +439,24 @@ def preprocess_bdata(): # to do
 
     return data
 
+from sklearn.pipeline import make_pipeline, Pipeline
+class MyPipeline(Pipeline):
+    @property
+    def coef_(self):
+        return self._final_estimator.coef_
+    @property
+    def feature_importances_(self):
+        return self._final_estimator.feature_importances_
 
 def logit_model(data, features):
     from sklearn.linear_model import LogisticRegressionCV, LogisticRegression
-    from sklearn.metrics import f1_score, classification_report
-    from sklearn.model_selection import RepeatedKFold, StratifiedKFold, GridSearchCV, cross_validate, train_test_split
+    from sklearn.metrics import f1_score, classification_report, confusion_matrix
+    from sklearn.model_selection import RepeatedKFold, StratifiedKFold, GridSearchCV, cross_validate, train_test_split, cross_val_predict
     from sklearn.utils.class_weight import compute_class_weight
-    from sklearn.pipeline import make_pipeline
+    from sklearn.pipeline import make_pipeline, Pipeline
     import statsmodels.api as sm
     from sklearn import preprocessing
+    from yellowbrick.model_selection import RFECV
 
     file_dir = os.path.join(wd, 'analysis', 'image_paths_exp.csv') # should be cc1
     image_paths = pd.read_csv(file_dir)['path'].tolist()
@@ -517,13 +543,56 @@ def logit_model(data, features):
     X = np.concatenate((X1, X2), axis=1)
     y = np.asarray(trial_df['response'])
 
+    # Split in development (train) and test set 
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=0, stratify=y)
+
+    # Simple model (without feature eliminatinon / grid search) + CV
+    clf = make_pipeline(preprocessing.StandardScaler(), lr_basemodel)
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=0)
+    scoring = ['accuracy', 'f1']
+    scores = cross_validate(clf, X_train, y_train, scoring=scoring, cv=cv, return_estimator=True)
+    mean_accuracy = np.mean(scores['test_accuracy'])
+    mean_f1 = np.mean(scores['test_f1'])
+    print(f"Mean accuracy: {mean_accuracy}") #0.649
+    print(f"Mean f1: {mean_f1}") #0.326 --> low --> cm shows high fp rate
+
+    # Cross validate prediction
+    y_train_pred = cross_val_predict(clf, X_train, y_train, cv=cv)
+    y_train_pred_prob = cross_val_predict(clf, X_train, y_train, cv=cv, method = 'predict_proba')
+    cm = confusion_matrix(y_train, y_train_pred)
+    tn, fp, fn, tp = cm.ravel()
+
+    # Recursive feature elimination
+    # Set up pipeline
+    scaler = preprocessing.StandardScaler()
+    class_weights = compute_class_weight(class_weight='balanced', classes=np.array([0,1]), y=y)
+    lr_basemodel = LogisticRegression(max_iter=5000, class_weight = {0:class_weights[0], 1:class_weights[1]})
+
+    pipe= MyPipeline(steps=[('pre', scaler),
+                    ('lr', lr_basemodel)])
+    fig, ax = plt.subplots()
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=0)
+    visualizer = RFECV(pipe, cv=cv, scoring='f1', step=0.1, ax=ax)
+    visualizer.fit(X_train, y_train) 
+    visualizer.finalize()
+    ax.set_ylabel("F1 score")
+    filename = os.path.join(wd, 'analysis/rfacv.png')
+    fig.savefig(filename)
+
+    # save visualizer opject
+    serialize(visualizer.__dict__)
+
+    # inspect scores
+    visualizer.cv_scores_
+
+    # get best model
+
     # Hyperparameter tuning
     lr_basemodel = LogisticRegression(max_iter=5000)
     pipeline = make_pipeline(preprocessing.StandardScaler(), lr_basemodel)
     class_weights = compute_class_weight(class_weight='balanced', classes=np.array([0,1]), y=y)
     class_weights = np.array([class_weights[0]/sum(class_weights), class_weights[1]/sum(class_weights)])
-    weight_seq = np.linspace(class_weights[0]-0.1, class_weights[0]+0.1,5)
-    param_grid= {'logisticregression__C': [0.5, 1, 10, 15], 'logisticregression__penalty': ['l1', 'l2'], 'logisticregression__class_weight': [{0:x ,1:1.0 -x} for x in weight_seq]}
+    param_grid= {'logisticregression__C': [0.5, 1, 10, 15], 'logisticregression__penalty': ['l1', 'l2']}
     folds = StratifiedKFold(n_splits = 5, shuffle = True, random_state = 42)
     scoring = ['accuracy', 'f1', 'precision', 'recall']
 
@@ -544,8 +613,6 @@ def logit_model(data, features):
     best_score = results['mean_test_f1'][best_index]
     best_params = results['params'][best_index]
 
-
-    
     # Gridsearch 
     grid_model= GridSearchCV(estimator= lr,param_grid=param,scoring="f1",cv=folds,return_train_score=True)
     grid_model.fit(X_train,y_train)
@@ -561,36 +628,7 @@ def logit_model(data, features):
     print(f"Classification report:")
     print(f"{classification_report(y_test, lr2_pred)}")
 
-    clf = make_pipeline(preprocessing.StandardScaler(), lr_basemodel)
-    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=0)
-    scoring = ['accuracy', 'f1', 'precision', 'recall']
-    scores = cross_validate(clf, X, y, scoring=scoring, cv=cv, return_estimator=True)
-    mean_scores = {
-                'accuracy': np.mean(scores['test_accuracy']), 
-                'f1': np.mean(scores['test_f1']),
-                'precision': np.mean(scores['test_precision']),
-                'recall': np.mean(scores['test_recall'])
-    }
 
-    
-    # # Train / test split --> use in evaluation set
-    # X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=0, stratify=y)
-    # scale = preprocessing.StandardScaler()
-    # X_train = scale.fit_transform(X_train)
-    # X_test = scale.transform(X_test) 
-
-    # # Check for imbalance
-    # pd.Series(y_train).value_counts(normalize=True) # --> 0: 0.86, 1:0.14
-
-    # Train and test metrics 
-    print(f"Train accuracy: {lr_basemodel.score(X_train, y_train)}")
-    print(f"Test accuracy: {lr_basemodel.score(X_test, y_test)}")
-    y_train_pred = lr_basemodel.predict(X_train)
-    y_test_pred = lr_basemodel.predict(X_test)
-    print(f"F1 train score: {f1_score(y_train,y_train_pred)}")
-    print(f"F1 test score: {f1_score(y_test,y_test_pred)}")
-    print(f"Classification report:")
-    print(f"{classification_report(y_test, y_test_pred)}")
 
     # Calculate noise ceiling --> evaluation test data?
     participants = pd.unique(data['subject_nr'])
