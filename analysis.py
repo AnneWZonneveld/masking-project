@@ -23,6 +23,7 @@ from sklearn.decomposition import PCA
 from sklearn.model_selection import cross_val_score
 from sklearn.model_selection import LeaveOneOut
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from yellowbrick.model_selection import RFECV
 
 wd = '/home/c11645571/masking-project'
 trial_file = pd.read_csv(os.path.join(wd, 'help_files', 'selection_THINGS.csv'))  
@@ -70,23 +71,6 @@ def move_images():
 
         if os.path.isfile(image):
             shutil.copy(image, destination)
-
-def serialize(data):
-    if isinstance(data, type):
-        return {"py/numpy.type": data.__name__}
-    if isinstance(data, np.integer):
-        return {"py/numpy.int": int(data)}
-    if isinstance(data, np.float):
-        return {"py/numpy.float": data.hex()}
-
-def deserialize(data):
-    if "py/numpy.type" in dct:
-        return np.dtype(dct["py/numpy.type"]).type
-    if "py/numpy.int" in dct:
-        return np.int32(dct["py/numpy.int"])
-    if "py/numpy.float" in dct:
-        return np.float64.fromhex(dct["py/numpy.float"])
-
 
 def fit_PCA(n_components):
     """Fit PCA on random non-experimental images of THINGS database"""
@@ -448,10 +432,11 @@ class MyPipeline(Pipeline):
     def feature_importances_(self):
         return self._final_estimator.feature_importances_
 
+
 def logit_model(data, features):
     from sklearn.linear_model import LogisticRegressionCV, LogisticRegression
     from sklearn.metrics import f1_score, classification_report, confusion_matrix
-    from sklearn.model_selection import RepeatedKFold, StratifiedKFold, GridSearchCV, cross_validate, train_test_split, cross_val_predict
+    from sklearn.model_selection import RepeatedKFold, StratifiedKFold, GridSearchCV, cross_validate, train_test_split, cross_val_predict, GroupShuffleSplit
     from sklearn.utils.class_weight import compute_class_weight
     from sklearn.pipeline import make_pipeline, Pipeline
     import statsmodels.api as sm
@@ -464,7 +449,6 @@ def logit_model(data, features):
 
     n_trials = len(trial_file)
     trial_df = pd.DataFrame()
-    # single_df = pd.DataFrame()
    
     no_mask = [i for i in range(len(trial_file)) if trial_file.iloc[i]['mask_type']=='no_mask']
     n_mask_trials = n_trials - len(no_mask)
@@ -506,16 +490,10 @@ def logit_model(data, features):
             mask_activations[no_mask_id, :] = mask_activation
 
             # get response for all participants (average?)
-            responses = data.groupby(['index'])['answer']
-            responses = data[data['index'] == trial_id]['answer'].tolist() #anwer or correct?
+            # responses = data.groupby(['index'])['answer']
+            responses = data[data['index'] == trial_id]['correct'].tolist() #anwer or correct?
             subject_nrs = data[data['index'] == trial_id]['subject_nr'].tolist()
             mask_type = mask_path.split('/')[-3]
-
-            # tmp_single['trialID'] = trial_id
-            # tmp_single['target_path'] = target_path
-            # tmp_single['mask_path'] = mask_path
-            # tmp_single['mask_activation'] = mask_activation
-            # tmp_single['target_activation'] = target_activation
 
             tmp['index'] = [trial_id for i in range(len(responses))]
             tmp['response'] = responses
@@ -531,8 +509,6 @@ def logit_model(data, features):
 
             no_mask_id =+ 1
 
-    shell()
-
     # Activations for all trials, all ppn
     X1 = np.zeros((len(trial_df), target_activation.shape[0]))
     X2 = np.zeros((len(trial_df), mask_activation.shape[0]))
@@ -543,24 +519,70 @@ def logit_model(data, features):
     X = np.concatenate((X1, X2), axis=1)
     y = np.asarray(trial_df['response'])
 
-    # Split in development (train) and test set 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=0, stratify=y)
+    # #Split in development (train) and test set / balanced for report 
+    # X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=0, stratify=y)
+
+    # Split in development (train) and test / balanced for mask type
+    splitter = GroupShuffleSplit(test_size=.20, n_splits=2, random_state = 0)
+    split = splitter.split(trial_df, groups=trial_df['mask_type'])
+    out_train_inds, out_test_inds = next(split)
+
+    X_train = X[out_train_inds]
+    X_test = X[out_test_inds]
+    y_train = y[out_train_inds]
+    y_test = y[out_test_inds]
+
 
     # Simple model (without feature eliminatinon / grid search) + CV
+    class_weights = compute_class_weight(class_weight='balanced', classes=np.array([0,1]), y=y_train)
+    lr_basemodel = LogisticRegression(max_iter=5000, class_weight = {0:class_weights[0], 1:class_weights[1]})
     clf = make_pipeline(preprocessing.StandardScaler(), lr_basemodel)
     cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=0)
-    scoring = ['accuracy', 'f1']
+    scoring = ['accuracy', 'f1', 'recall', 'precision']
     scores = cross_validate(clf, X_train, y_train, scoring=scoring, cv=cv, return_estimator=True)
     mean_accuracy = np.mean(scores['test_accuracy'])
     mean_f1 = np.mean(scores['test_f1'])
-    print(f"Mean accuracy: {mean_accuracy}") #0.649
-    print(f"Mean f1: {mean_f1}") #0.326 --> low --> cm shows high fp rate
-
+    mean_recall = np.mean(scores['test_recall'])
+    mean_precision = np.mean(scores['test_precision'])
+    print(f"Mean accuracy: {mean_accuracy}, std {np.std(scores['test_accuracy'])}") #0.555
+    print(f"Mean f1: {mean_f1}, std {np.std(scores['test_f1'])}") #0.557
+    print(f"Mean recall: {mean_recall}, std {np.std(scores['test_recall'])} ") #0.476
+    print(f"Mean precision: {mean_precision}, std {np.std(scores['test_precision'])}") #0.672
+    # Low accuracy; just above chance
+    # Reasonable F1 score --> high precision / lower recall --> not picking up all the actual positives, but mostly accurately prediciting positives
+    
     # Cross validate prediction
     y_train_pred = cross_val_predict(clf, X_train, y_train, cv=cv)
     y_train_pred_prob = cross_val_predict(clf, X_train, y_train, cv=cv, method = 'predict_proba')
     cm = confusion_matrix(y_train, y_train_pred)
     tn, fp, fn, tp = cm.ravel()
+    # Mainly a lot of false negatives
+
+    # Calc C (criterion) for different masks accross splits
+    print("Calculating C across folds")
+    Z = stats.norm.ppf
+    fold_count = 0
+    fig, ax = plt.subplots()
+    for cv_train_ind, cv_test_ind in cv.split(X_train, y_train):
+        og_train_ind = out_train_inds[cv_train_ind]
+        fold_data = data.iloc[og_train_ind]
+        hit_rate_adjusted = ((fold_data[fold_data['valid_cue'] == 1].groupby(['mask_type', 'subject_nr']).sum()['answer'])+ 0.5) /((fold_data[fold_data['valid_cue'] == 1].groupby(['mask_type', 'subject_nr']).count()['valid_cue'] ) + 1)
+        fa_rate_adjusted = ((fold_data[fold_data['valid_cue'] == 0].groupby(['mask_type', 'subject_nr']).sum()['answer'] ) + 0.5) / ((fold_data[fold_data['valid_cue'] == 0].groupby(['mask_type', 'subject_nr']).count()['valid_cue'] ) + 1)
+        C_adjusted = -0.5*(hit_rate_adjusted.apply(lambda x: Z(x)) + fa_rate_adjusted.apply(lambda x: Z(x)))
+
+        sns.lineplot(data=C_adjusted.reset_index(), x='mask_type', y=0)
+        sns.despine(offset=2, trim=True)
+        plt.tight_layout()
+
+        fold_count += 0
+
+    plt.ylabel("C")
+    plt.title("Average loglinear C per mask across folds")
+    fig.tight_layout()
+    file_name = os.path.join(wd, 'analysis/C_across_folds.png')
+    fig.savefig(file_name)    
+    shell()
+
 
     # Recursive feature elimination
     # Set up pipeline
@@ -576,59 +598,67 @@ def logit_model(data, features):
     visualizer.fit(X_train, y_train) 
     visualizer.finalize()
     ax.set_ylabel("F1 score")
-    filename = os.path.join(wd, 'analysis/rfacv.png')
+    filename = os.path.join(wd, 'analysis/rfecv.png')
     fig.savefig(filename)
 
-    # save visualizer opject
-    serialize(visualizer.__dict__)
+    # Save fitted models and selected features
+    # selected_features = np.where(np.array(visualizer.support_) == 1)
+    selected_features = visualizer.support_
+    best_score = np.max(np.mean(visualizer.cv_scores_, axis=1))
+    fitted_model = visualizer.rfe_estimator_.estimator_.named_steps['lr']
 
-    # inspect scores
-    visualizer.cv_scores_
 
-    # get best model
+    # layers = ['layer5']
+    # n_layers = len(layers)
+    # n_features_og = X.shape[1]
+    # feature_type = np.zeros((1, n_features_og))
+    # for layer in layers:
+    #     layer_select = np.linspace(0, n_features_og, num = n_layers + 1)
+    #     # select = X[:, layer_select[0]:layer_select[1]]
+    #     for activation in ['target', 'mask']:
+    #         activation_select = np.linspace(layer_select[0], layer_select[1], num=3)
 
-    # Hyperparameter tuning
-    lr_basemodel = LogisticRegression(max_iter=5000)
-    pipeline = make_pipeline(preprocessing.StandardScaler(), lr_basemodel)
-    class_weights = compute_class_weight(class_weight='balanced', classes=np.array([0,1]), y=y)
-    class_weights = np.array([class_weights[0]/sum(class_weights), class_weights[1]/sum(class_weights)])
-    param_grid= {'logisticregression__C': [0.5, 1, 10, 15], 'logisticregression__penalty': ['l1', 'l2']}
-    folds = StratifiedKFold(n_splits = 5, shuffle = True, random_state = 42)
+
+
+    # Assess fit 
+    # clf = make_pipeline(preprocessing.StandardScaler(), fitted_model)
+    # cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=0)
+    # scoring = ['accuracy', 'f1', 'recall', 'precision']
+    # scores = cross_validate(clf, X_train, y_train, scoring=scoring, cv=cv, return_estimator=True)
+
+    file_name = os.path.join(wd, "analysis/rfecv_selected.npy")
+    np.save(file_name, selected_features)
+    file_name = os.path.join(wd, "analysis/rfecv_fit.pkl")
+    pkl.dump(fitted_model, open(filename, "wb"))
+    
+    # Load fitted model
+    file_name = os.path.join(wd, "analysis/rfecv_fit.pkl")
+    fitted_model = pkl.load(open(os.path.join(wd, file_name),'rb'))
+
+    # Hyper parameter tuning
+    param_grid= {'lr__C': [0.1, 0.5, 1, 5, 10, 50, 100]}
+    cv = StratifiedKFold(n_splits = 5, shuffle = True, random_state = 0)
     scoring = ['accuracy', 'f1', 'precision', 'recall']
-
     gs = GridSearchCV(
-        estimator=pipeline,
+        estimator=fitted_model,
         param_grid=param_grid,
         scoring=scoring,
         refit="f1",
         n_jobs=-1,
-        return_train_score=True,
+        cv=cv
     )
 
-    gs.fit(X, y)
+    gs.fit(X_train, y_train)
     results = gs.cv_results_
+    best_fit = gs.best_estimator_
+    best_score = gs.best_score_
+    print(f"Best fit {best_fit}")
+    print(f"Best F1: {best_score}")
 
-    # for every score
-    best_index = np.where(results['rank_test_f1'] == 1)
-    best_score = results['mean_test_f1'][best_index]
-    best_params = results['params'][best_index]
-
-    # Gridsearch 
-    grid_model= GridSearchCV(estimator= lr,param_grid=param,scoring="f1",cv=folds,return_train_score=True)
-    grid_model.fit(X_train,y_train)
-    print(f"GridSearch best F1 score: {grid_model.best_score}")
-    best_params = grid_model.best_params
-    print(f"GridSearch best parameters score: {best_params}")
-
-    # Refit 
-    lr2=LogisticRegression(class_weight={0:0.27,1:0.73},C=20,penalty="l2")
-    lr2.fit(X_train,y_train)
-
-    lr2_pred = lr2_pred.predict(X_test)
-    print(f"Classification report:")
-    print(f"{classification_report(y_test, lr2_pred)}")
-
-
+    # Save best fit
+    file_name = os.path.join(wd, "analysis/gs_bestfit.pkl")
+    pkl.dump(fitted_model, open(file_name, "wb"))
+    
 
     # Calculate noise ceiling --> evaluation test data?
     participants = pd.unique(data['subject_nr'])
