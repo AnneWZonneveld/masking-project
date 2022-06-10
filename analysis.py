@@ -24,6 +24,7 @@ from sklearn.model_selection import cross_val_score
 from sklearn.model_selection import LeaveOneOut
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from yellowbrick.model_selection import RFECV
+from matplotlib.lines import Line2D      
 
 wd = '/home/c11645571/masking-project'
 trial_file = pd.read_csv(os.path.join(wd, 'help_files', 'selection_THINGS.csv'))  
@@ -599,8 +600,10 @@ def logit_model(data, exp_features, random_features):
             # get response for all participants (average?)
             responses = data[data['index'] == trial_id]['answer'].tolist() #anwer or correct?
             subject_nrs = data[data['index'] == trial_id]['subject_nr'].tolist()
-            mask_type = mask_path.split('/')[-3]
             valid = data[data['index'] == trial_id]['valid_cue'].tolist()
+            mask_type = mask_path.split('/')[-3]
+            if mask_type == 'masks':
+                mask_type = mask_path.split('/')[-2]
             
             tmp['index'] = [trial_id for i in range(len(responses))]
             tmp['response'] = responses
@@ -681,44 +684,46 @@ def logit_model(data, exp_features, random_features):
     # Evaluate lr model for different layers and for random network
     all_scores = []
     all_cms = []
+    all_pred = []
     all_random_scores = []
     all_random_cms = []
     for i in range(n_layers):
         print(f"{layers[i]}")
 
-        # Imagnet Network Activations - LR
-        scores = cross_validate(clf, X_train[:, :, i], y_train, scoring=scoring, cv=cv, return_train_score=True)
-        # scores = cross_validate(clf, X_train[:, :, i], y_train, scoring=scoring, cv=cv)
-        all_scores.append(scores)
-        mean_accuracy = np.mean(scores['test_accuracy'])
-        mean_f1 = np.mean(scores['test_f1'])
-        mean_recall = np.mean(scores['test_recall'])
-        mean_precision = np.mean(scores['test_precision'])
-        print(f"Mean accuracy: {mean_accuracy}, std {np.std(scores['test_accuracy'])}") #0.555
-        print(f"Mean f1: {mean_f1}, std {np.std(scores['test_f1'])}") #0.557
-        print(f"Mean recall: {mean_recall}, std {np.std(scores['test_recall'])} ") #0.476
-        print(f"Mean precision: {mean_precision}, std {np.std(scores['test_precision'])}") #0.672
+        # # Imagnet Network Activations - LR
+        # scores = cross_validate(clf, X_train[:, :, i], y_train, scoring=scoring, cv=cv, return_train_score=True)
+        # # scores = cross_validate(clf, X_train[:, :, i], y_train, scoring=scoring, cv=cv)
+        # all_scores.append(scores)
+        # mean_accuracy = np.mean(scores['test_accuracy'])
+        # mean_f1 = np.mean(scores['test_f1'])
+        # mean_recall = np.mean(scores['test_recall'])
+        # mean_precision = np.mean(scores['test_precision'])
+        # print(f"Mean accuracy: {mean_accuracy}, std {np.std(scores['test_accuracy'])}") #0.555
+        # print(f"Mean f1: {mean_f1}, std {np.std(scores['test_f1'])}") #0.557
+        # print(f"Mean recall: {mean_recall}, std {np.std(scores['test_recall'])} ") #0.476
+        # print(f"Mean precision: {mean_precision}, std {np.std(scores['test_precision'])}") #0.672
 
         # # Cross validate prediction
-        # print(f"Cross val prediction")
-        # y_train_pred = cross_val_predict(clf, X_train[:, :, i], y_train, cv=cv)
-        # # y_train_pred_prob = cross_val_predict(clf, X_train, y_train, cv=cv, method = 'predict_proba')
+        print(f"Cross val prediction")
+        y_train_pred = cross_val_predict(clf, X_train[:, :, i], y_train, cv=cv)
+        # y_train_pred_prob = cross_val_predict(clf, X_train, y_train, cv=cv, method = 'predict_proba')
         # cm = confusion_matrix(y_train, y_train_pred)
         # print("Confusion matrix:")
         # print(cm)
         # all_cms.append(cm)
+        all_pred.append(y_train_pred)
 
         # Random network activations - LR
-        random_scores = cross_validate(clf, rX_train[:, :, i], y_train, scoring=scoring, cv=cv, return_train_score=True)
-        all_random_scores.append(random_scores)
-        mean_accuracy = np.mean(random_scores['test_accuracy'])
-        mean_f1 = np.mean(random_scores['test_f1'])
-        mean_recall = np.mean(random_scores['test_recall'])
-        mean_precision = np.mean(random_scores['test_precision'])
-        print(f"Mean accuracy random: {mean_accuracy}, std {np.std(random_scores['test_accuracy'])}") #0.555
-        print(f"Mean f1 random: {mean_f1}, std {np.std(random_scores['test_f1'])}") #0.557
-        print(f"Mean recall random: {mean_recall}, std {np.std(random_scores['test_recall'])} ") #0.476
-        print(f"Mean precision random: {mean_precision}, std {np.std(random_scores['test_precision'])}") #0.672
+        # random_scores = cross_validate(clf, rX_train[:, :, i], y_train, scoring=scoring, cv=cv, return_train_score=True)
+        # all_random_scores.append(random_scores)
+        # mean_accuracy = np.mean(random_scores['test_accuracy'])
+        # mean_f1 = np.mean(random_scores['test_f1'])
+        # mean_recall = np.mean(random_scores['test_recall'])
+        # mean_precision = np.mean(random_scores['test_precision'])
+        # print(f"Mean accuracy random: {mean_accuracy}, std {np.std(random_scores['test_accuracy'])}") #0.555
+        # print(f"Mean f1 random: {mean_f1}, std {np.std(random_scores['test_f1'])}") #0.557
+        # print(f"Mean recall random: {mean_recall}, std {np.std(random_scores['test_recall'])} ") #0.476
+        # print(f"Mean precision random: {mean_precision}, std {np.std(random_scores['test_precision'])}") #0.672
 
         # # Cross validate prediction
         # print(f"Cross val prediction")
@@ -789,45 +794,121 @@ def logit_model(data, exp_features, random_features):
     score_df['train_r_precision'] = train_r_precisions
     score_df['train_r_recall'] = train_r_recalls
 
-    fig, ax = plt.subplots()
-    sns.lineplot(data=score_df, x='layer', y='train_accuracy', color='red', linestyle='--')
-    sns.lineplot(data=score_df, x='layer', y='test_accuracy', color='red')
-    sns.lineplot(data=score_df, x='layer', y='train_r_accuracy', color='firebrick', linestyle='--')
-    sns.lineplot(data=score_df, x='layer', y='test_r_accuracy', color='firebrick')
-    sns.lineplot(data=score_df, x='layer', y='train_f1', color='blue', linestyle='--')
-    sns.lineplot(data=score_df, x='layer', y='test_f1', color='blue')
-    sns.lineplot(data=score_df, x='layer', y='train_r_f1', color='darkblue', linestyle='--')
-    sns.lineplot(data=score_df, x='layer', y='test_r_f1', color='darkblue')
-    sns.lineplot(data=score_df, x='layer', y='train_precision', color='palegreen', linestyle='--')
-    sns.lineplot(data=score_df, x='layer', y='test_precision', color='palegreen')
-    sns.lineplot(data=score_df, x='layer', y='train_r_precision', color='darkgreen', linestyle='--')
-    sns.lineplot(data=score_df, x='layer', y='test_r_precision', color='darkgreen')
-    sns.lineplot(data=score_df, x='layer', y='train_recall', color='peachpuff', linestyle='--')
-    sns.lineplot(data=score_df, x='layer', y='test_recall', color='peachpuff')
-    sns.lineplot(data=score_df, x='layer', y='train_r_recall', color='darkorange', linestyle='--')
-    sns.lineplot(data=score_df, x='layer', y='test_r_recall', color='darkorange')
-    plt.ylabel("Score")
-    plt.title("Performance LR-model trained on pretrained verus random network activations across layers")
+    #  Plot performance over layers
+    fig, ax =  plt.subplots(2,2, sharex=True, dpi=100, figsize=(14,7))
+    fig.suptitle('Model performance')
+    fig.supxlabel('Layer')
+    fig.supylabel('Score')
+    sns.lineplot(data=score_df, x='layer', y='train_accuracy', color='red', linestyle='--', ax=ax[0,0])
+    sns.lineplot(data=score_df, x='layer', y='test_accuracy', color='red', ax=ax[0,0])
+    sns.lineplot(data=score_df, x='layer', y='train_r_accuracy', color='firebrick', linestyle='--', ax=ax[0,0])
+    sns.lineplot(data=score_df, x='layer', y='test_r_accuracy', color='firebrick', ax=ax[0,0])
+    ax[0,0].set_title("Accuracy")
+    ax[0,0].yaxis.label.set_visible(False)
+    ax[0,0].xaxis.label.set_visible(False)
+    ax[0,0].legend(handles=[
+        Line2D([], [], marker='_', color="red", label="Pretrained"), 
+        Line2D([], [], marker='_', color="firebrick", label="Random")], loc='upper right')
+    sns.lineplot(data=score_df, x='layer', y='train_f1', color='blue', linestyle='--', ax=ax[0,1])
+    sns.lineplot(data=score_df, x='layer', y='test_f1', color='blue', ax=ax[0,1])
+    sns.lineplot(data=score_df, x='layer', y='train_r_f1', color='darkblue', linestyle='--', ax=ax[0,1])
+    sns.lineplot(data=score_df, x='layer', y='test_r_f1', color='darkblue', ax=ax[0,1])
+    ax[0,1].set_title("F1")
+    ax[0,1].yaxis.label.set_visible(False)
+    ax[0,1].xaxis.label.set_visible(False)
+    ax[0,1].legend(handles=[
+        Line2D([], [], marker='_', color="blue", label="Pretrained"),
+        Line2D([], [], marker='_', color="darkblue", label="Random")], loc='upper right')
+    sns.lineplot(data=score_df, x='layer', y='train_precision', color='palegreen', linestyle='--', ax=ax[1,0])
+    sns.lineplot(data=score_df, x='layer', y='test_precision', color='palegreen', ax=ax[1,0])
+    sns.lineplot(data=score_df, x='layer', y='train_r_precision', color='darkgreen', linestyle='--', ax=ax[1,0])
+    sns.lineplot(data=score_df, x='layer', y='test_r_precision', color='darkgreen', ax=ax[1,0])
+    ax[1,0].set_title("Precision")
+    ax[1,0].yaxis.label.set_visible(False)
+    ax[1,0].xaxis.label.set_visible(False)
+    ax[1,0].set_xticklabels([1,2,3,4,5])
+    ax[1,0].legend(handles=[
+        Line2D([], [], marker='_', color="palegreen", label="Pretrained"),
+        Line2D([], [], marker='_', color="darkgreen", label="Random")], loc='upper right')
+    sns.lineplot(data=score_df, x='layer', y='train_recall', color='peachpuff', linestyle='--', ax=ax[1,1])
+    sns.lineplot(data=score_df, x='layer', y='test_recall', color='peachpuff', ax=ax[1,1])
+    sns.lineplot(data=score_df, x='layer', y='train_r_recall', color='darkorange', linestyle='--', ax=ax[1,1])
+    sns.lineplot(data=score_df, x='layer', y='test_r_recall', color='darkorange', ax=ax[1,1])
+    ax[1,1].set_title("Recall")
+    ax[1,1].yaxis.label.set_visible(False)
+    ax[1,1].xaxis.label.set_visible(False)
+    ax[1,1].set_xticklabels([1,2,3,4,5])
+    ax[1,1].legend(handles=[        
+        Line2D([], [], marker='_', color="peachpuff", label="Pretrained"),
+        Line2D([], [], marker='_', color="darkorange", label="Random")], loc='upper right')
 
-    from matplotlib.lines import Line2D 
-    ax.legend(handles=[
-        Line2D([], [], marker='_', color="red", label="Accuracy"), 
-        Line2D([], [], marker='_', color="firebrick", label="Random accuracy"),
-        Line2D([], [], marker='_', color="blue", label="F1"),
-        Line2D([], [], marker='_', color="darkblue", label="Random F1"),
-        Line2D([], [], marker='_', color="palegreen", label="Precision"),
-        Line2D([], [], marker='_', color="darkgreen", label="Random precision"),
-        Line2D([], [], marker='_', color="peachpuff", label="Recall"),
-        Line2D([], [], marker='_', color="darkorange", label="Random recall"),
+    plt.figlegend(handles = [
         Line2D([], [], marker='_', color="black", label="Test score"),
         Line2D([], [], marker='_', color="black", label="Training score", linestyle="--")
-        ], loc='center left', bbox_to_anchor=(1, 0.5))
-
-    # plt.legend(['Accuracy', 'Random Accuracy', 'F1', 'Random F1','Precision', 'Random Precision', 'Recall', 'Random Recall'])
-    plt.tight_layout()
+        ])
+    fig.tight_layout()
     file_name = os.path.join(wd, 'analysis/TrainTest_Score_across_layers.png')
     fig.savefig(file_name)  
 
+
+    # Inspect predictions
+    select_trial_df = select_trial_df.reset_index()
+    for i in range(n_layers):
+        layer = layers[i]
+        layer_pred = all_pred[i]
+        order_pred = []
+        for j in range(len(select_trial_df)):
+            # append prediction (1/0)
+            if j in out_train_inds:
+                idx = np.where(out_train_inds == j)
+                order_pred.append(layer_pred[idx][0])
+            # test set
+            else:
+                order_pred.append(2)
+        select_trial_df[layer + '_pred'] = order_pred
+
+    select_trial_df.groupby(['mask_type'])['layer1_pred'] 
+
+    # Calculate accuracy
+    print("Calculating accuracies")
+    accuracies = {}
+    for layer in layers:
+        correct = []
+        for i in range(len(select_trial_df)):
+            response = select_trial_df.iloc[i]['response']
+            prediction = select_trial_df.iloc[i][layer + '_pred']
+            if response == prediction:
+                correct.append(1)
+            else:
+                correct.append(0)
+        select_trial_df[layer + '_correct'] = correct
+
+        accuracy = select_trial_df.groupby('mask_type')[layer + '_correct'].sum() / select_trial_df.groupby('mask_type')[layer + '_correct'].count()
+        accuracies[layer] = accuracy
+    
+    # Accuracy per mask plot
+    fig, ax =  plt.subplots()
+    colours = ['red', 'blue', 'orange', 'green', 'yellow']
+    for i in range(len(layers)):
+        layer = layers[i]
+        accuracy = accuracies[layer]
+        sns.lineplot(data=accuracy.reset_index(), x='mask_type', y=f'{layer}_correct', color=colours[i])
+    
+    plt.figlegend(handles = [
+        Line2D([], [], marker='_', color="red", label="Layer 1"),
+        Line2D([], [], marker='_', color="blue", label="Layer 2"),
+        Line2D([], [], marker='_', color="orange", label="Layer 3"),
+        Line2D([], [], marker='_', color="green", label="Layer 4"),
+        Line2D([], [], marker='_', color="yellow", label="Layer 5")])
+    
+    plt.ylabel("Accuracy")
+    plt.xlabel("Layer")
+    ax.set_xticklabels(['natural', 'scrambled', 'geometric', 'lines', 'blocked'])
+    plt.title("Accuracy for different maks type")
+    fig.tight_layout()
+    file_name = os.path.join(wd, 'analysis/Accuracies-per-mask.png')
+    fig.savefig(file_name)  
+    
 
     # Calc C (criterion) for different masks accross splits
     print("Calculating C across folds")
@@ -1052,7 +1133,7 @@ def distance_analysis(data, exp_features, random_features):
 
     print("Creating trial df")
     no_mask_id = 0
-    mask_trials = []
+
     X1_single = np.zeros((n_mask_trials, n_components, n_layers))
     X2_single = np.zeros((n_mask_trials, n_components, n_layers))
 
@@ -1071,7 +1152,6 @@ def distance_analysis(data, exp_features, random_features):
         mask_path = trial['mask_path']
 
         if mask_path != 'no_mask':
-            mask_trials.append(i)
             
             # get target path
             target_path = trial['ImageID']
@@ -1088,10 +1168,7 @@ def distance_analysis(data, exp_features, random_features):
 
                 rtarget_activation = random_features[layer][target_index, :]
                 rtarget_activations[:, i] = rtarget_activation
-
-            X1_single[no_mask_id, :, :] = target_activations
-            rX1_single[no_mask_id, :, :] = rtarget_activations
-
+                        
             # get mask path
             mask_path = os.path.join(wd, mask_path[53:])
 
@@ -1106,17 +1183,23 @@ def distance_analysis(data, exp_features, random_features):
 
                 rmask_activation = random_features[layer][mask_index, :]
                 rmask_activations[:, i] = rmask_activation
-
+            
+            X1_single[no_mask_id, :, :] = target_activations
+            rX1_single[no_mask_id, :, :] = rtarget_activations
             X2_single[no_mask_id, :, :] = mask_activations
             rX2_single[no_mask_id, :, :] = rmask_activations
 
             # get response for all participants (average?)
-            responses = data[data['index'] == trial_id]['correct'].tolist() #anwer or correct?
+            responses = data[data['index'] == trial_id]['answer'].tolist() #anwer or correct?
             subject_nrs = data[data['index'] == trial_id]['subject_nr'].tolist()
             mask_type = mask_path.split('/')[-3]
+            valid = data[data['index'] == trial_id]['valid_cue'].tolist()
+            if mask_type == 'masks':
+                mask_type = mask_path.split('/')[-2]
 
             tmp['index'] = [trial_id for i in range(len(responses))]
             tmp['response'] = responses
+            tmp['valid'] = valid
             tmp['subject_nr'] = subject_nrs
             tmp['target_path'] = [target_path for i in range(len(responses))]
             tmp['mask_path'] = [mask_path for i in range(len(responses))]
@@ -1125,30 +1208,56 @@ def distance_analysis(data, exp_features, random_features):
             tmp['target_activation'] = [target_activations for i in range(len(responses))]
             tmp['rmask_activation'] = [rmask_activations for i in range(len(responses))]
             tmp['rtarget_activation'] = [rtarget_activations for i in range(len(responses))]
+            tmp['no_mask_id'] = [no_mask_id for i in range(len(responses))]
 
             trial_df = pd.concat([trial_df, tmp], ignore_index=True)
 
             no_mask_id += 1
-    
-    X1_single_scaled= np.zeros((n_mask_trials, n_components, n_layers))
-    X2_single_scaled = np.zeros((n_mask_trials, n_components, n_layers))
-    rX1_single_scaled = np.zeros((n_mask_trials, n_components, n_layers))
-    rX2_single_scaled = np.zeros((n_mask_trials, n_components, n_layers))
+
+    # Only get valid trials 
+    select_trial_df = trial_df[trial_df['valid']==1].reset_index()
+
+    # Inspect how may valid trials per unique trial
+    # select_trial_df.groupby(['index']).count()['response']
+    # select_trial_df.groupby(['index']).count()['response'].min() # 8 
+    # select_trial_df.groupby(['index']).count()['response'].max() # 30
+
+    shell()
+    # Predefine
+    # X1_single_scaled= np.zeros((n_mask_trials, n_components, n_layers))
+    # X2_single_scaled = np.zeros((n_mask_trials, n_components, n_layers))
+    # rX1_single_scaled = np.zeros((n_mask_trials, n_components, n_layers))
+    # rX2_single_scaled = np.zeros((n_mask_trials, n_components, n_layers))
 
     X_distance = np.zeros((n_mask_trials, n_layers))
     rX_distance = np.zeros((n_mask_trials, n_layers))
 
+    X_combined = np.concatenate([X1_single, X2_single],axis=1)
+    X_combined_scaled = np.zeros((n_mask_trials, n_components*2, n_layers))
+
+    # Scale activations per layer
+    print("Scaling activations")
     for i in range(n_layers):
-        scaler_1 = preprocessing.StandardScaler().fit(X1_single[:,:, i])
-        X1_single_scaled[:,:, i] = scaler_1.transform(X1_single[:,:, i])
-        scaler_2 = preprocessing.StandardScaler().fit(X2_single[:,:, i])
-        X2_single_scaled[:,:, i] = scaler_2.transform(X2_single[:,:, i])
+        scaler = preprocessing.StandardScaler().fit(X_combined[:,:, i])
+        X_combined_scaled[:,:, i] = scaler.transform(X_combined[:,:, i])
 
-        r_scaler_1 = preprocessing.StandardScaler().fit(rX1_single[:,:, i])
-        rX1_single_scaled[:,:, i] = r_scaler_1.transform(rX1_single[:,:, i])
-        r_scaler_2 = preprocessing.StandardScaler().fit(rX2_single[:,:, i])
-        rX2_single_scaled[:,:, i] = r_scaler_2.transform(rX2_single[:,:, i])
+    X1_scaled = X_combined_scaled[:, 0:n_components, :]
+    X2_scaled = X_combined_scaled[:, n_components:n_components*2, :]
 
+    # print("Scaling activations")
+    # for i in range(n_layers):
+    #     scaler_1 = preprocessing.StandardScaler().fit(X1_single[:,:, i])
+    #     X1_single_scaled[:,:, i] = scaler_1.transform(X1_single[:,:, i])
+    #     scaler_2 = preprocessing.StandardScaler().fit(X2_single[:,:, i])
+    #     X2_single_scaled[:,:, i] = scaler_2.transform(X2_single[:,:, i])
+
+    #     r_scaler_1 = preprocessing.StandardScaler().fit(rX1_single[:,:, i])
+    #     rX1_single_scaled[:,:, i] = r_scaler_1.transform(rX1_single[:,:, i])
+    #     r_scaler_2 = preprocessing.StandardScaler().fit(rX2_single[:,:, i])
+    #     rX2_single_scaled[:,:, i] = r_scaler_2.transform(rX2_single[:,:, i])
+
+    print("Calculating distances")
+    # Calculate distances per trial and layer
     for i in range(n_mask_trials):
         for j in range(n_layers):
             target = X1_single_scaled[i, :, j]
@@ -1162,31 +1271,35 @@ def distance_analysis(data, exp_features, random_features):
             X_distance[i, j] = distance
             rX_distance[i, j] = r_distance
 
+    # Add distances to select trial_df
     distance_df = pd.DataFrame()
     for i in range(n_mask_trials):
         tmp = pd.DataFrame()
+
+        nr_trials = len(select_trial_df[select_trial_df['no_mask_id']==i])
         distance = X_distance[i, :]
         r_distance = rX_distance[i, :]
-        distances = [distance for i in range(len(responses))]
-        r_distances = [r_distance for i in range(len(responses))]
+        distances = [distance for i in range(nr_trials)]
+        r_distances = [r_distance for i in range(nr_trials)]
         tmp['distance'] = distances
         tmp['r_distance'] = r_distances
         distance_df = pd.concat([distance_df, tmp], ignore_index=True)
-    
+
     shell()
-    trial_df['distance'] = distance_df['distance']
-    trial_df['r_distance'] = distance_df['r_distance']
+
+    select_trial_df['distance'] = distance_df['distance'].to_list()
+    select_trial_df['r_distance'] = distance_df['r_distance'].to_list()
 
     cors = []
     r_cors = []
     for j in range(n_layers):
         distances = []
         r_distances = []
-        for i in range(len(trial_df)):
-            distances.append(trial_df['distance'].iloc[i][j])
-            r_distances.append(trial_df['r_distance'].iloc[i][j])
-        cor = stats.pearsonr(trial_df['response'], distances)
-        r_cor = stats.pearsonr(trial_df['response'], r_distances)
+        for i in range(len(select_trial_df)):
+            distances.append(select_trial_df['distance'].iloc[i][j])
+            r_distances.append(select_trial_df['r_distance'].iloc[i][j])
+        cor = stats.pearsonr(select_trial_df['response'], distances)
+        r_cor = stats.pearsonr(select_trial_df['response'], r_distances)
         cors.append(cor)
         r_cors.append(r_cor)
 
