@@ -1515,131 +1515,286 @@ def PLS_model(data, exp_features, random_features):
     from sklearn.metrics import recall_score
     from sklearn.metrics import precision_score
 
-    all_pred = []
+    boots = 10
 
-    all_train_accuracies = []
-    all_train_f1s = []
-    all_train_recalls = []
-    all_train_precisions = []
-    all_train_r_accuracies = []
-    all_train_r_f1s = []
-    all_train_r_recalls = []
-    all_train_r_precisions = []
+    all_train_accuracies = np.zeros((boots, n_layers))
+    all_train_f1s = np.zeros((boots, n_layers))
+    all_train_recalls = np.zeros((boots, n_layers))
+    all_train_precisions = np.zeros((boots, n_layers))
+    all_train_r_accuracies = np.zeros((boots, n_layers))
+    all_train_r_f1s = np.zeros((boots, n_layers))
+    all_train_r_recalls = np.zeros((boots, n_layers))
+    all_train_r_precisions = np.zeros((boots, n_layers))
 
-    all_test_accuracies = []
-    all_test_f1s = []
-    all_test_recalls = []
-    all_test_precisions = []
-    all_test_r_accuracies = []
-    all_test_r_f1s = []
-    all_test_r_recalls = []
-    all_test_r_precisions = []
+    all_test_accuracies = np.zeros((boots, n_layers))
+    all_test_f1s = np.zeros((boots, n_layers))
+    all_test_recalls = np.zeros((boots, n_layers))
+    all_test_precisions = np.zeros((boots, n_layers))
+    all_test_r_accuracies = np.zeros((boots, n_layers))
+    all_test_r_f1s = np.zeros((boots, n_layers))
+    all_test_r_recalls = np.zeros((boots, n_layers))
+    all_test_r_precisions = np.zeros((boots, n_layers))
 
-    cval = StratifiedKFold(n_splits=5, shuffle=True, random_state=0)
-    for i in range(n_layers):
-        layer = layers[i]
-        print(f"{layer}")
+    for boot in range(boots):
 
-        train_accuracies = []
-        train_f1s = []
-        train_recalls = []
-        train_precisions = []
-        train_r_accuracies = []
-        train_r_f1s = []
-        train_r_recalls = []
-        train_r_precisions = []
+        print(f"boot {boot}")
+        seed = boot
 
-        test_accuracies = []
-        test_f1s = []
-        test_recalls = []
-        test_precisions = []
-        test_r_accuracies = []
-        test_r_f1s = []
-        test_r_recalls = []
-        test_r_precisions = []
+        layers_train_accuracies = []
+        layers_train_f1s = []
+        layers_train_recalls = []
+        layers_train_precisions = []
+        layers_train_r_accuracies = []
+        layers_train_r_f1s = []
+        layers_train_r_recalls = []
+        layers_train_r_precisions = []
 
-        split_count = 0
-        for train, test in cval.split(X_dev, y_dev):
-            print(f"split : {split_count}")
-            
-            # Scale features
-            scaler = preprocessing.StandardScaler()
-            sX_dev_train = scaler.fit_transform(X_dev[train,:,i])
-            sX_dev_test = scaler.transform(X_dev[test,:,i])
+        layers_test_accuracies = []
+        layers_test_f1s = []
+        layers_test_recalls = []
+        layers_test_precisions = []
+        layers_test_r_accuracies = []
+        layers_test_r_f1s = []
+        layers_test_r_recalls = []
+        layers_test_r_precisions = []
 
-            rscaler = preprocessing.StandardScaler()
-            rsX_dev_train = rscaler.fit_transform(rX_dev[train,:,i])
-            rsX_dev_test = rscaler.transform(rX_dev[test,:,i])
+        cval = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
 
-            # Predict
-            test_y_pred = pls_da(sX_dev_train, y_dev[train], sX_dev_test)  
-            test_ry_pred = pls_da(rsX_dev_train, y_dev[train], rsX_dev_test)  
-            train_y_pred = pls_da(sX_dev_train, y_dev[train], sX_dev_train)  
-            train_ry_pred = pls_da(rsX_dev_train, y_dev[train], rsX_dev_train) 
+        for i in range(n_layers):
+            layer = layers[i]
+            print(f"{layer}")
 
-            # Performance - test set
-            test_accuracies.append(accuracy_score(y_dev[test], test_y_pred))
-            test_f1s.append(f1_score(y_dev[test], test_y_pred))
-            test_recalls.append(recall_score(y_dev[test], test_y_pred))
-            test_precisions.append(precision_score(y_dev[test], test_y_pred))
+            train_accuracies = []
+            train_f1s = []
+            train_recalls = []
+            train_precisions = []
+            train_r_accuracies = []
+            train_r_f1s = []
+            train_r_recalls = []
+            train_r_precisions = []
 
-            test_r_accuracies.append(accuracy_score(y_dev[test], test_ry_pred))
-            test_r_f1s.append(f1_score(y_dev[test], test_ry_pred))
-            test_r_recalls.append(recall_score(y_dev[test], test_ry_pred))
-            test_r_precisions.append(precision_score(y_dev[test], test_ry_pred))
+            test_accuracies = []
+            test_f1s = []
+            test_recalls = []
+            test_precisions = []
+            test_r_accuracies = []
+            test_r_f1s = []
+            test_r_recalls = []
+            test_r_precisions = []
 
-            # Performance - train set 
-            train_accuracies.append(accuracy_score(y_dev[train], train_ry_pred))
-            train_f1s.append(f1_score(y_dev[train], train_ry_pred))
-            train_recalls.append(recall_score(y_dev[train], train_ry_pred))
-            train_precisions.append(precision_score(y_dev[train], train_ry_pred))
+            split_count = 0
+            for train, test in cval.split(X_dev, y_dev):
+                print(f"split : {split_count}")
+                
+                # Scale features
+                scaler = preprocessing.StandardScaler()
+                sX_dev_train = scaler.fit_transform(X_dev[train,:,i])
+                sX_dev_test = scaler.transform(X_dev[test,:,i])
 
-            train_r_accuracies.append(accuracy_score(y_dev[train], train_ry_pred))
-            train_r_f1s.append(f1_score(y_dev[train], train_ry_pred))
-            train_r_recalls.append(recall_score(y_dev[train], train_ry_pred))
-            train_r_precisions.append(precision_score(y_dev[train], train_ry_pred))
-  
-            split_count +=1     
+                rscaler = preprocessing.StandardScaler()
+                rsX_dev_train = rscaler.fit_transform(rX_dev[train,:,i])
+                rsX_dev_test = rscaler.transform(rX_dev[test,:,i])
 
-        all_train_accuracies.append(train_accuracies)
-        all_train_f1s.append(train_f1s)
-        all_train_recalls.append(train_recalls)
-        all_train_precisions.append(train_precisions)
-        all_train_r_accuracies.append(train_r_accuracies)
-        all_train_r_f1s.append(train_r_f1s)
-        all_train_r_recalls.append(train_r_recalls)
-        all_train_r_precisions.append(train_r_precisions)
+                # Predict
+                test_y_pred = pls_da(sX_dev_train, y_dev[train], sX_dev_test)  
+                test_ry_pred = pls_da(rsX_dev_train, y_dev[train], rsX_dev_test)  
+                train_y_pred = pls_da(sX_dev_train, y_dev[train], sX_dev_train)  
+                train_ry_pred = pls_da(rsX_dev_train, y_dev[train], rsX_dev_train) 
 
-        all_test_accuracies.append(test_accuracies)
-        all_test_f1s.append(test_f1s)
-        all_test_recalls.append(test_recalls)
-        all_test_precisions.append(test_precisions)
-        all_test_r_accuracies.append(test_r_accuracies)
-        all_test_r_f1s.append(test_r_f1s)
-        all_test_r_recalls.append(test_r_recalls)
-        all_test_r_precisions.append(test_r_precisions)
+                # Performance - test set
+                test_accuracies.append(accuracy_score(y_dev[test], test_y_pred))
+                test_f1s.append(f1_score(y_dev[test], test_y_pred))
+                test_recalls.append(recall_score(y_dev[test], test_y_pred))
+                test_precisions.append(precision_score(y_dev[test], test_y_pred))
+
+                test_r_accuracies.append(accuracy_score(y_dev[test], test_ry_pred))
+                test_r_f1s.append(f1_score(y_dev[test], test_ry_pred))
+                test_r_recalls.append(recall_score(y_dev[test], test_ry_pred))
+                test_r_precisions.append(precision_score(y_dev[test], test_ry_pred))
+
+                # Performance - train set 
+                train_accuracies.append(accuracy_score(y_dev[train], train_y_pred))
+                train_f1s.append(f1_score(y_dev[train], train_y_pred))
+                train_recalls.append(recall_score(y_dev[train], train_y_pred))
+                train_precisions.append(precision_score(y_dev[train], train_y_pred))
+
+                train_r_accuracies.append(accuracy_score(y_dev[train], train_ry_pred))
+                train_r_f1s.append(f1_score(y_dev[train], train_ry_pred))
+                train_r_recalls.append(recall_score(y_dev[train], train_ry_pred))
+                train_r_precisions.append(precision_score(y_dev[train], train_ry_pred))
+    
+                split_count +=1     
+
+            layers_train_accuracies.append(np.mean(train_accuracies))
+            layers_train_f1s.append(np.mean(train_f1s))
+            layers_train_recalls.append(np.mean(train_recalls))
+            layers_train_precisions.append(np.mean(train_precisions))
+            layers_train_r_accuracies.append(np.mean(train_r_accuracies))
+            layers_train_r_f1s.append(np.mean(train_r_f1s))
+            layers_train_r_recalls.append(np.mean(train_r_recalls))
+            layers_train_r_precisions.append(np.mean(train_r_precisions))
+
+            layers_test_accuracies.append(np.mean(test_accuracies))
+            layers_test_f1s.append(np.mean(test_f1s))
+            layers_test_recalls.append(np.mean(test_recalls))
+            layers_test_precisions.append(np.mean(test_precisions))
+            layers_test_r_accuracies.append(np.mean(test_r_accuracies))
+            layers_test_r_f1s.append(np.mean(test_r_f1s))
+            layers_test_r_recalls.append(np.mean(test_r_recalls))
+            layers_test_r_precisions.append(np.mean(test_r_precisions))
+
+        all_train_accuracies[boot, :] = layers_train_accuracies
+        all_train_f1s[boot, :] = layers_train_f1s
+        all_train_recalls[boot, :] = layers_train_recalls
+        all_train_precisions[boot, :] = layers_train_precisions
+        all_train_r_accuracies[boot, :] = layers_train_r_accuracies
+        all_train_r_f1s[boot, :] = layers_train_r_f1s
+        all_train_r_recalls[boot, :] = layers_train_r_recalls
+        all_train_r_precisions[boot, :] = layers_train_r_precisions
+
+        all_test_accuracies[boot, :] = layers_test_accuracies
+        all_test_f1s[boot, :] = layers_test_f1s
+        all_test_recalls[boot, :] = layers_test_recalls
+        all_test_precisions[boot, :] = layers_test_precisions
+        all_test_r_accuracies[boot, :] = layers_test_r_accuracies
+        all_test_r_f1s[boot, :] =  layers_test_r_f1s
+        all_test_r_recalls[boot, :] = layers_test_r_recalls
+        all_test_r_precisions[boot, :] = layers_test_r_precisions
+
+    score_df = pd.DataFrame()
+    score_df['layer'] = layers
+    score_df['m_test_accuracy'] = np.mean(all_test_accuracies, axis=0)
+    score_df['m_test_f1'] = np.mean(all_test_f1s, axis=0)
+    score_df['m_test_precision'] = np.mean(all_test_precisions, axis=0)
+    score_df['m_test_recall'] = np.mean(all_test_recalls, axis=0)
+    score_df['m_test_r_accuracy'] = np.mean(all_test_r_accuracies, axis=0)
+    score_df['m_test_r_f1'] = np.mean(all_test_r_f1s, axis=0)
+    score_df['m_test_r_precision'] = np.mean(all_test_r_precisions, axis=0)
+    score_df['m_test_r_recall'] = np.mean(all_test_r_recalls, axis=0)
+    score_df['m_train_accuracy'] = np.mean(all_train_accuracies, axis=0)
+    score_df['m_train_f1'] = np.mean(all_train_f1s, axis=0)
+    score_df['m_train_precision'] = np.mean(all_train_precisions, axis=0)
+    score_df['m_train_recall'] = np.mean(all_train_recalls, axis=0)
+    score_df['m_train_r_accuracy'] = np.mean(all_train_r_accuracies, axis=0)
+    score_df['m_train_r_f1'] = np.mean(all_train_r_f1s, axis=0)
+    score_df['m_train_r_precision'] = np.mean(all_train_r_precisions, axis=0)
+    score_df['m_train_r_recall'] = np.mean(all_train_r_recalls, axis=0)
+    score_df['s_test_accuracy'] = np.std(all_test_accuracies, axis=0)
+    score_df['s_test_f1'] = np.std(all_test_f1s, axis=0)
+    score_df['s_test_precision'] = np.std(all_test_precisions, axis=0)
+    score_df['s_test_recall'] = np.std(all_test_recalls, axis=0)
+    score_df['s_test_r_accuracy'] = np.std(all_test_r_accuracies, axis=0)
+    score_df['s_test_r_f1'] = np.std(all_test_r_f1s, axis=0)
+    score_df['s_test_r_precision'] = np.std(all_test_r_precisions, axis=0)
+    score_df['s_test_r_recall'] = np.std(all_test_r_recalls, axis=0)
+    score_df['s_train_accuracy'] = np.std(all_train_accuracies, axis=0)
+    score_df['s_train_f1'] = np.std(all_train_f1s, axis=0)
+    score_df['s_train_precision'] = np.std(all_train_precisions, axis=0)
+    score_df['s_train_recall'] = np.std(all_train_recalls, axis=0)
+    score_df['s_train_r_accuracy'] = np.std(all_train_r_accuracies, axis=0)
+    score_df['s_train_r_f1'] = np.std(all_train_r_f1s, axis=0)
+    score_df['s_train_r_precision'] = np.std(all_train_r_precisions, axis=0)
+    score_df['s_train_r_recall'] = np.std(all_train_r_recalls, axis=0)
+
+    #  Plot performance over layers
+    n_masks = len(pd.unique(trial_df['mask_type']))
+
+    fig, ax =  plt.subplots(2,2, sharex=True, dpi=100, figsize=(14,7))
+    fig.suptitle('PLS model performance')
+    fig.supxlabel('Layer')
+    fig.supylabel('Score')
+    sns.lineplot(data=score_df, x='layer', y='m_train_accuracy', color='red', linestyle='--', ax=ax[0,0])
+    sns.lineplot(data=score_df, x='layer', y='m_test_accuracy', color='red', ax=ax[0,0])
+    ax[0,0].fill_between(np.arange(n_masks), score_df['m_train_accuracy'] - score_df['s_train_accuracy'], score_df['m_train_accuracy'] + score_df['s_train_accuracy'], color= 'red', alpha=0.2)
+    ax[0,0].fill_between(np.arange(n_masks), score_df['m_test_accuracy'] - score_df['s_test_accuracy'], score_df['m_test_accuracy'] + score_df['s_test_accuracy'], color= 'red', alpha=0.2)
+    sns.lineplot(data=score_df, x='layer', y='m_train_r_accuracy', color='firebrick', linestyle='--', ax=ax[0,0])
+    sns.lineplot(data=score_df, x='layer', y='m_test_r_accuracy', color='firebrick', ax=ax[0,0])
+    ax[0,0].fill_between(np.arange(n_masks), score_df['m_train_r_accuracy'] - score_df['s_train_r_accuracy'], score_df['m_train_r_accuracy'] + score_df['s_train_r_accuracy'], color= 'firebrick', alpha=0.2)
+    ax[0,0].fill_between(np.arange(n_masks), score_df['m_test_r_accuracy'] - score_df['s_test_r_accuracy'],  score_df['m_test_r_accuracy'] +  score_df['s_test_r_accuracy'], color= 'firebrick', alpha=0.2)
+    ax[0,0].set_title("Accuracy")
+    ax[0,0].yaxis.label.set_visible(False)
+    ax[0,0].xaxis.label.set_visible(False)
+    ax[0,0].set_xticklabels([1,2,3,4,5])
+    ax[0,0].legend(handles=[
+        Line2D([], [], marker='_', color="red", label="Pretrained"), 
+        Line2D([], [], marker='_', color="firebrick", label="Random")], loc='upper right')
+    sns.lineplot(data=score_df, x='layer', y='m_train_f1', color='blue', linestyle='--', ax=ax[0,1])
+    sns.lineplot(data=score_df, x='layer', y='m_test_f1', color='blue', ax=ax[0,1])
+    ax[0,1].fill_between(np.arange(n_masks), score_df['m_train_f1'] - score_df['s_train_f1'], score_df['m_train_f1'] + score_df['s_train_f1'], color= 'blue', alpha=0.2)
+    ax[0,1].fill_between(np.arange(n_masks), score_df['m_test_f1'] - score_df['s_test_f1'],  score_df['m_test_f1'] +  score_df['s_test_f1'], color= 'blue', alpha=0.2)
+    sns.lineplot(data=score_df, x='layer', y='m_train_r_f1', color='darkblue', linestyle='--', ax=ax[0,1])
+    sns.lineplot(data=score_df, x='layer', y='m_test_r_f1', color='darkblue', ax=ax[0,1])
+    ax[0,1].fill_between(np.arange(n_masks), score_df['m_train_r_f1'] - score_df['s_train_r_f1'], score_df['m_train_r_f1'] + score_df['s_train_r_f1'], color= 'darkblue', alpha=0.2)
+    ax[0,1].fill_between(np.arange(n_masks), score_df['m_test_r_f1'] - score_df['s_test_r_f1'],  score_df['m_test_r_f1'] +  score_df['s_test_r_f1'], color= 'darkblue', alpha=0.2)
+    ax[0,1].set_title("F1")
+    ax[0,1].yaxis.label.set_visible(False)
+    ax[0,1].xaxis.label.set_visible(False)
+    ax[0,1].legend(handles=[
+        Line2D([], [], marker='_', color="blue", label="Pretrained"),
+        Line2D([], [], marker='_', color="darkblue", label="Random")], loc='upper right')
+    sns.lineplot(data=score_df, x='layer', y='m_train_precision', color='palegreen', linestyle='--', ax=ax[1,0])
+    sns.lineplot(data=score_df, x='layer', y='m_test_precision', color='palegreen', ax=ax[1,0])
+    ax[1,0].fill_between(np.arange(n_masks), score_df['m_train_precision'] - score_df['s_train_precision'], score_df['m_train_precision'] + score_df['s_train_precision'], color= 'palegreen', alpha=0.2)
+    ax[1,0].fill_between(np.arange(n_masks), score_df['m_test_precision'] - score_df['s_test_precision'],  score_df['m_test_precision'] +  score_df['s_test_precision'], color= 'palegreen', alpha=0.2)
+    sns.lineplot(data=score_df, x='layer', y='m_train_r_precision', color='darkgreen', linestyle='--', ax=ax[1,0])
+    sns.lineplot(data=score_df, x='layer', y='m_test_r_precision', color='darkgreen', ax=ax[1,0])
+    ax[1,0].fill_between(np.arange(n_masks), score_df['m_train_r_precision'] - score_df['s_train_r_precision'], score_df['m_train_r_precision'] + score_df['s_train_r_precision'], color= 'darkgreen', alpha=0.2)
+    ax[1,0].fill_between(np.arange(n_masks), score_df['m_test_r_precision'] - score_df['s_test_r_precision'],  score_df['m_test_r_precision'] +  score_df['s_test_r_precision'], color= 'darkgreen', alpha=0.2)
+    ax[1,0].set_title("Precision")
+    ax[1,0].yaxis.label.set_visible(False)
+    ax[1,0].xaxis.label.set_visible(False)
+    ax[1,0].set_xticklabels([1,2,3,4,5])
+    ax[1,0].legend(handles=[
+        Line2D([], [], marker='_', color="palegreen", label="Pretrained"),
+        Line2D([], [], marker='_', color="darkgreen", label="Random")], loc='upper right')
+    sns.lineplot(data=score_df, x='layer', y='m_train_recall', color='peachpuff', linestyle='--', ax=ax[1,1])
+    sns.lineplot(data=score_df, x='layer', y='m_test_recall', color='peachpuff', ax=ax[1,1])
+    ax[1,1].fill_between(np.arange(n_masks), score_df['m_train_recall'] - score_df['s_train_recall'], score_df['m_train_recall'] + score_df['s_train_recall'], color= 'peachpuff', alpha=0.2)
+    ax[1,1].fill_between(np.arange(n_masks), score_df['m_test_recall'] - score_df['s_test_recall'],  score_df['m_test_recall'] +  score_df['s_test_recall'], color= 'peachpuff', alpha=0.2)
+    sns.lineplot(data=score_df, x='layer', y='m_train_r_recall', color='darkorange', linestyle='--', ax=ax[1,1])
+    sns.lineplot(data=score_df, x='layer', y='m_test_r_recall', color='darkorange', ax=ax[1,1])
+    ax[1,1].fill_between(np.arange(n_masks), score_df['m_train_r_recall'] - score_df['s_train_r_recall'], score_df['m_train_r_recall'] + score_df['s_train_r_recall'], color= 'darkorange', alpha=0.2)
+    ax[1,1].fill_between(np.arange(n_masks), score_df['m_test_r_recall'] - score_df['s_test_r_recall'],  score_df['m_test_r_recall'] +  score_df['s_test_r_recall'], color= 'darkorange', alpha=0.2)
+    ax[1,1].set_title("Recall")
+    ax[1,1].yaxis.label.set_visible(False)
+    ax[1,1].xaxis.label.set_visible(False)
+    ax[1,1].set_xticklabels([1,2,3,4,5])
+    ax[1,1].legend(handles=[        
+        Line2D([], [], marker='_', color="peachpuff", label="Pretrained"),
+        Line2D([], [], marker='_', color="darkorange", label="Random")], loc='upper right')
+
+    plt.figlegend(handles = [
+        Line2D([], [], marker='_', color="black", label="Test score"),
+        Line2D([], [], marker='_', color="black", label="Training score", linestyle="--")
+        ])
+
+    fig.tight_layout()
+    file_name = os.path.join(wd, 'analysis/TrainTest_Score_across_layers_PLS.png')
+    fig.savefig(file_name)  
 
 
-    # Cross validate prediction
-    print(f"Cross val prediction")
-    boot_res = []
-    boot_inds = []
-    for boot in range(10):
-        print(f"Boot {boot}")
-        boot_cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=i)
 
-        boot_test_ind = []
-        for train_index, test_index in boot_cv.split(X_train, y_train):
-            # boot_test_inds.append(test_index)
-            boot_test_ind.append(test_index.tolist())
 
-        boot_test_ind = [x for boot in boot_test_ind for x in boot]
-        boot_inds.append(boot_test_ind)
+    # # Cross validate prediction
+    # print(f"Cross val prediction")
+    # boot_res = []
+    # boot_inds = []
+    # for boot in range(10):
+    #     print(f"Boot {boot}")
+    #     boot_cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=i)
 
-        y_train_pred = cross_val_predict(clf, X_train[:, :, i], y_train, cv=boot_cv)
-        boot_res.append(y_train_pred)
-    all_pred.append(boot_res)
-    all_pred_ind.append(boot_inds)
+    #     boot_test_ind = []
+    #     for train_index, test_index in boot_cv.split(X_train, y_train):
+    #         # boot_test_inds.append(test_index)
+    #         boot_test_ind.append(test_index.tolist())
+
+    #     boot_test_ind = [x for boot in boot_test_ind for x in boot]
+    #     boot_inds.append(boot_test_ind)
+
+    #     y_train_pred = cross_val_predict(clf, X_train[:, :, i], y_train, cv=boot_cv)
+    #     boot_res.append(y_train_pred)
+    # all_pred.append(boot_res)
+    # all_pred_ind.append(boot_inds)
 
 
 
