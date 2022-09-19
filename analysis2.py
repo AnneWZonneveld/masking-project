@@ -9,6 +9,7 @@ from PIL import Image
 import os
 import re
 import glob
+import time 
 import shutil
 import numpy as np
 import seaborn as sns
@@ -20,12 +21,19 @@ import matplotlib.pyplot as plt
 from scipy import stats
 from IPython import embed as shell
 from sklearn.decomposition import PCA
-from sklearn.model_selection import cross_val_score
-from sklearn.model_selection import LeaveOneOut
+from sklearn.model_selection import LeaveOneOut, RepeatedKFold, StratifiedKFold, GridSearchCV, cross_validate, train_test_split, cross_val_predict, GroupShuffleSplit
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from yellowbrick.model_selection import RFECV
 from matplotlib.lines import Line2D     
-import time 
+from sklearn.linear_model import LogisticRegressionCV, LogisticRegression, LinearRegression
+from sklearn.metrics import f1_score, classification_report, confusion_matrix
+from sklearn.utils.class_weight import compute_class_weight
+from sklearn.pipeline import make_pipeline, Pipeline
+import statsmodels.api as sm
+from sklearn import preprocessing
+from sklearn.feature_selection import VarianceThreshold
+from sklearn.metrics import mean_absolute_error as MAE
+from scipy.stats import spearmanr, ttest_1samp, pearsonr, ttest_rel, wilcoxon
 
 wd = '/home/c11645571/masking-project'
 trial_file = pd.read_csv(os.path.join(wd, 'help_files', 'selection_THINGS.csv'))  
@@ -237,17 +245,6 @@ class MyPipeline(Pipeline):
 
 
 def logit_model(data, exp_features, random_features):
-    from sklearn.linear_model import LogisticRegressionCV, LogisticRegression, LinearRegression
-    from sklearn.metrics import f1_score, classification_report, confusion_matrix
-    from sklearn.model_selection import RepeatedKFold, StratifiedKFold, GridSearchCV, cross_validate, train_test_split, cross_val_predict, GroupShuffleSplit
-    from sklearn.utils.class_weight import compute_class_weight
-    from sklearn.pipeline import make_pipeline, Pipeline
-    import statsmodels.api as sm
-    from sklearn import preprocessing
-    from yellowbrick.model_selection import RFECV
-    from sklearn.feature_selection import VarianceThreshold
-    from sklearn.metrics import mean_absolute_error as MAE
-    from scipy.stats import spearmanr, ttest_1samp, pearsonr, ttest_rel, wilcoxon
 
     file_dir = os.path.join(wd, 'analysis', 'image_paths_exp.csv') # should be cc1
     image_paths = pd.read_csv(file_dir)['path'].tolist()
@@ -335,6 +332,10 @@ def logit_model(data, exp_features, random_features):
 
     all_X = np.concatenate((X['layer1'], X['layer2'], X['layer3'], X['layer4'], X['layer5']), axis=1)
     X['all'] = all_X
+    file_path = os.path.join(wd, 'analysis/stats/X')
+    file = open(file_path, 'wb')
+    pkl.dump(X, file)
+    file.close()
 
     # Mask / no mask mean accuracy 
     type_means = trial_df.groupby(['mask_type'])['correct'].mean()
@@ -443,12 +444,15 @@ def logit_model(data, exp_features, random_features):
 
     # Evaluate MAE per mask type
     MAE_mask_df = pd.DataFrame()
+    mask_MAEs = []
+    layer_nr = layers_oi * len(masks_ordered)
+    mask_nr = []
+
     for j in range(len(masks_ordered)):
 
-        mask_type = mask_types[j]
+        mask_type = masks_ordered[j]
+        mask_name = mask_type.split("_")[1]
         mask_ids = np.array(GA_df_masks[GA_df_masks['Mask type']== mask_type].index)
-    
-        mask_MAEs = []
 
         for i in range(len(layers_oi)):
 
@@ -459,8 +463,12 @@ def logit_model(data, exp_features, random_features):
 
             error = MAE(y_mask, mask_pred)
             mask_MAEs.append(error)
-        
-        MAE_mask_df[mask_type] = mask_MAEs
+
+            mask_nr.append(mask_name)
+    
+    MAE_mask_df['MAE'] = mask_MAEs
+    MAE_mask_df['Mask'] = mask_nr
+    MAE_mask_df['Layer'] = layer_nr
 
     # Save 
     file_path = os.path.join(wd, 'analysis/stats/')
@@ -469,83 +477,21 @@ def logit_model(data, exp_features, random_features):
     MAE_mask_df.to_csv(os.path.join(file_path, 'MAE_per_mask.csv'), index=False)
 
     # Plot MAE per mask per layer
-    palette = sns.color_palette("tab10", len(masks_ordered))
-    for i in range(len(masks_ordered)):
-        mask = masks_ordered[i]
-        tmp_df = MAE_mask_df[mask].reset_index()
-        tmp_df = tmp_df.rename(columns = {'index': 'layer', f'{mask}':'MAE'})
-        sns.pointplot(data=tmp_df, x="layer", y="MAE", color=palette[i])
-
+    sns.pointplot(data=MAE_mask_df, x='Layer', y='MAE', hue='Mask')
     sns.despine(offset=10)
     plt.ylim([0.07, 0.14])
     xlabels = ['layer 1', 'layer 2', 'layer 3', 'layer 4', 'layer 5', 'all']
     plt.xticks(np.arange(len(xlabels)),xlabels)
     plt.xlabel('')
-
-    handles = []
-    for colour in palette:
-        handles.append(Line2D([0], [0], color=colour, lw=3, linestyle='-'))
-    labels = ['natural', 'lines', 'blocked', 'geometric', 'scrambled']
-    
-    l = plt.legend(handles, labels, loc=1,
-                borderaxespad=0., frameon=False)
-
     plt.tight_layout()
     image_path = os.path.join(wd, 'analysis/MAEs-per-mask.png')
     plt.savefig(image_path)
     plt.clf()
 
-
-    # Evaluate MAE per mask type - over layers
-    MAE_mask_df = pd.DataFrame()
-    for j in range(len(layers_oi)):
-
-        layer = layers_oi[j]
-        print(layer)
-
-        mask_MAEs = []
-
-        for i in range(len(masks_ordered)):
-
-            mask_type = mask_types[i]
-            mask_ids = np.array(GA_df_masks[GA_df_masks['Mask type']== mask_type].index)
-
-            mask_pred = preds[mask_ids, j]
-            y_mask = y[mask_ids]
-
-            error = MAE(y_mask, mask_pred)
-            mask_MAEs.append(error)
-        
-        MAE_mask_df[layer] = mask_MAEs
-
-    # Save 
-    file_path = os.path.join(wd, 'analysis/stats/')
-    if not os.path.exists(file_path):
-            os.makedirs(file_path)
-    MAE_mask_df.to_csv(os.path.join(file_path, 'MAE_per_mask.csv'), index=False)
-
-    # Plot MAE per mask per layer
-    palette = sns.color_palette("tab10", len(layers_oi))
-    for i in range(len(masks_ordered)):
-        mask = masks_ordered[i]
-        tmp_df = MAE_mask_df.iloc[i].reset_index()
-        tmp_df = tmp_df.rename(columns = {'index': 'layer', f'{i}':'MAE'})
-        sns.pointplot(data=tmp_df, x="layer", y="MAE", color=palette[i])
-
+    # Plot MAE per mask per layer - swapped
+    sns.pointplot(data=MAE_mask_df, x='Mask', y='MAE', hue='Layer')
     sns.despine(offset=10)
-    # plt.ylim([0.07, 0.14])
-    xlabels = ['layer 1', 'layer 2', 'layer 3', 'layer 4', 'layer 5', 'all']
-    plt.xticks(np.arange(len(xlabels)),xlabels)
-    plt.xlabel('')
-
-    handles = []
-    for colour in palette:
-        handles.append(Line2D([0], [0], color=colour, lw=3, linestyle='-'))
-    labels = ['natural', 'lines', 'blocked', 'geometric', 'scrambled']
-    
-    l = plt.legend(handles, labels, loc=1,
-                borderaxespad=0., frameon=False)
-
+    plt.ylim([0.07, 0.14])
     plt.tight_layout()
     image_path = os.path.join(wd, 'analysis/MAEs-per-mask-alt.png')
     plt.savefig(image_path)
@@ -618,14 +564,31 @@ def logit_model(data, exp_features, random_features):
     plt.savefig(image_path)
 
 def model_per_mask():
-    # Load GA_df_masks
-    # Load X 
-    # Load y
+    shell()
 
+    # Load GA_df_masks
+    file_path = os.path.join(wd,  'analysis/stats/GA_df_masks.csv')
+    GA_df_masks = pd.read_csv(file_path)
+    y = np.asarray(GA_df_masks['Efficacy'])
+
+    # Load X 
+    file_path = os.path.join(wd,  'analysis/stats/')
+    X = glob.glob(os.path.join(file_path, 'X'))[0]
+    file = open(X, 'rb')
+    X = pkl.load(file)
+    file.close()
+
+    # Set up pipeline
     lr = LinearRegression()
     clf = make_pipeline(VarianceThreshold(), preprocessing.StandardScaler(), lr)
 
+    n_mask_trials = len(GA_df_masks)    
+    masks_ordered = ['1_natural', '5_lines', '6_blocked', '4_geometric', '2_scrambled']
+    layers_oi = ['layer1', 'layer2', 'layer3', 'layer4', 'layer5', 'all']
+
+    preds = np.zeros((n_mask_trials/len(masks_ordered), len(layers_oi)))
     MAE_masks = np.zeros((len(layers_oi), len(masks_ordered)))
+
     for i in range(len(layers_oi)):
         layer = layers_oi[i]
         print(f" {layer}")
@@ -635,12 +598,12 @@ def model_per_mask():
             print(f" {mask_type}")
 
             mask_ids = np.array(GA_df_masks[GA_df_masks['Mask type']== mask_type].index)
-            other_ids = np.array(GA_df_masks[GA_df_masks['Mask type'] != mask_type].index)
+            X_select = X[layer][mask_ids]
+            y_select= y[mask_ids]
 
-            X_train = X[layer][mask_ids]
-            y_train = y[mask_ids]
-            X_test = X[layer][other_ids]
-            y_test = y[other_ids]
+            mask_pred = cross_val_predict(clf, X_select, y_select, cv=X_select.shape[0])
+            preds[:, i] = mask_pred
+
 
             clf.fit(X_train, y_train)
             mask_pred = clf.predict(X_test)
@@ -679,812 +642,6 @@ def model_per_mask():
     image_path = os.path.join(wd, 'analysis/MAEs-fitted-per-mask.png')
     plt.savefig(image_path)
     plt.clf()
-
-
-
-
-
-
-def PLS_model1(data, exp_features, random_features):
-    from sklearn.linear_model import LogisticRegressionCV, LogisticRegression
-    from sklearn.metrics import f1_score, classification_report, confusion_matrix
-    from sklearn.model_selection import RepeatedKFold, StratifiedKFold, Kfold, GridSearchCV, cross_validate, train_test_split, cross_val_predict, GroupShuffleSplit
-    from sklearn.utils.class_weight import compute_class_weight
-    from sklearn.pipeline import make_pipeline, Pipeline
-    import statsmodels.api as sm
-    from sklearn import preprocessing
-    from yellowbrick.model_selection import RFECV
-    from sklearn.cross_decomposition import PLSRegression
-
-    file_dir = os.path.join(wd, 'analysis', 'image_paths_exp.csv') # should be cc1
-    image_paths = pd.read_csv(file_dir)['path'].tolist()
-    concepts = pd.unique(concept_selection['concept']).tolist()
-
-    n_trials = len(trial_file)
-    trial_df = pd.DataFrame()
-   
-    layers = ['layer1', 'layer2', 'layer3', 'layer4', 'layer5']
-    n_layers = len(layers)
-    no_mask = [i for i in range(len(trial_file)) if trial_file.iloc[i]['mask_type']=='no_mask']
-    n_mask_trials = n_trials - len(no_mask)
-
-    print("Creating trial df")
-    trial_df = pd.DataFrame()
-    valid_data =  data[data['valid_cue'] == 1]
-
-    no_mask_id = 0
-    mask_trials = []
-
-    all_index = []
-    all_responses = []
-    all_mask_types = []
-    all_mask_activations = []
-    all_target_activations = []
-    all_rmask_activations = []
-    all_rtarget_activations = []
-    all_no_mask_ids = []
-
-    for i in range(len(trial_file)):
-
-        trial = trial_file.iloc[i]
-        trial_id  = i
-
-        # Check if trial is mask trial
-        mask_path = trial['mask_path']
-
-        if mask_path != 'no_mask':
-            mask_trials.append(i)
-            
-            # get target path
-            target_path = trial['ImageID']
-            target_path = os.path.join(wd, target_path[53:])
-
-            # get according activations
-            target_index = image_paths.index(target_path)
-            target_activations  = np.zeros((n_components, n_layers))
-            rtarget_activations  = np.zeros((n_components, n_layers))
-            for i in range(n_layers):
-                layer = layers[i]
-                target_activation = exp_features[layer][target_index, :]
-                target_activations[:, i] = target_activation
-
-                rtarget_activation = random_features[layer][target_index, :]
-                rtarget_activations[:, i] = rtarget_activation
-            
-            all_target_activations.append(target_activations)
-            all_rtarget_activations.append(target_activations)
-                        
-            # get mask path
-            mask_path = os.path.join(wd, mask_path[53:])
-
-            # get according activation
-            mask_index = image_paths.index(mask_path)
-            mask_activations  = np.zeros((n_components, n_layers))
-            rmask_activations  = np.zeros((n_components, n_layers))
-            for i in range(n_layers):
-                layer = layers[i]
-                mask_activation = exp_features[layer][mask_index, :]
-                mask_activations[:, i] = mask_activation
-
-                rmask_activation = random_features[layer][mask_index, :]
-                rmask_activations[:, i] = rmask_activation
-            
-            all_mask_activations.append(target_activations)
-            all_rmask_activations.append(target_activations)
-
-            # get response for only valid trials 
-            response = np.mean(valid_data[valid_data['index'] == trial_id]['answer'].tolist()) #anwer or correct?
-            mask_type = mask_path.split('/')[-3]
-            if mask_type == 'masks':
-                mask_type = mask_path.split('/')[-2]
-
-            all_responses.append(response)
-            all_mask_types.append(mask_type)
-            all_index.append(trial_id)
-            all_no_mask_ids.append(no_mask_id)
-
-            no_mask_id =+ 1
-
-    trial_df['index'] = all_index
-    trial_df['no_mask_id'] = all_no_mask_ids
-    trial_df['mask_type'] = all_mask_types
-    trial_df['response'] = all_responses
-    trial_df['target_activation'] = all_target_activations
-    trial_df['mask_activation'] = all_mask_activations
-    trial_df['rtarget_activation'] = all_rtarget_activations
-    trial_df['rmask_activation'] = all_rmask_activations
-
-    # Activations for all trials, all ppn --> without PCA? 
-    X1 = np.zeros((len(trial_df), n_components, n_layers))
-    X2 = np.zeros((len(trial_df), n_components, n_layers))
-
-    rX1 =  np.zeros((len(trial_df), n_components, n_layers))
-    rX2 = np.zeros((len(trial_df), n_components, n_layers))
-
-    for i in range(len(trial_df)):
-            X1[i, :, :] = trial_df['target_activation'].iloc[i]
-            X2[i, :, :] = trial_df['mask_activation'].iloc[i]
-            rX1[i, :, :] = trial_df['rtarget_activation'].iloc[i]
-            rX2[i, :, :] = trial_df['rmask_activation'].iloc[i]
-    X = np.concatenate((X1, X2), axis=1)
-    rX = np.concatenate((rX1, rX2), axis=1)
-    y = np.asarray(trial_df['response'])
-
-    # Split in development (train) and test / balanced for mask type
-    indices = np.arange(len(trial_df))
-    X_train, X_test, y_train, y_test, out_train_inds, out_test_inds = train_test_split(X, y, indices, test_size=0.3, stratify=trial_df['mask_type'].values, random_state=0)
-
-    X_train = X[out_train_inds]
-    X_test = X[out_test_inds]
-    rX_train = rX[out_train_inds]
-    rX_test = rX[out_test_inds]
-    y_train = y[out_train_inds]
-    y_test = y[out_test_inds]
-
-    shell()
-
-    # Simple model (without feature eliminatinon / grid search) + CV
-    pls_basemodel = PLSRegression(n_components=2, max_iter=5000) # 500 components? 
-
-    clf = make_pipeline(preprocessing.StandardScaler(), pls_basemodel)
-    cv = KFold(n_splits=5, shuffle=True, random_state=0)
-
-    all_scores = []
-    all_pred = []
-    all_pred_ind = []
-    all_random_scores = []
-    for i in range(n_layers):
-        print(f"{layers[i]}")
-
-        # Imagnet Network Activations - LR
-        # scores = cross_validate(clf, X_train[:, :, i], y_train, scoring=scoring, cv=cv, return_train_score=True)
-        # # scores = cross_validate(clf, X_train[:, :, i], y_train, scoring=scoring, cv=cv)
-        # all_scores.append(scores)
-        # mean_accuracy = np.mean(scores['test_accuracy'])
-        # mean_f1 = np.mean(scores['test_f1'])
-        # mean_recall = np.mean(scores['test_recall'])
-        # mean_precision = np.mean(scores['test_precision'])
-        # print(f"Mean accuracy: {mean_accuracy}, std {np.std(scores['test_accuracy'])}") #0.555
-        # print(f"Mean f1: {mean_f1}, std {np.std(scores['test_f1'])}") #0.557
-        # print(f"Mean recall: {mean_recall}, std {np.std(scores['test_recall'])} ") #0.476
-        # print(f"Mean precision: {mean_precision}, std {np.std(scores['test_precision'])}") #0.672
-
-        # Cross validate prediction
-        print(f"Cross val prediction")
-        boot_inds = []
-        boot_res = np.zeros((10, X_train.shape[0]))
-        for boot in range(10):
-            print(f"Boot {boot}")
-            boot_cv = KFold(n_splits=5, shuffle=True, random_state=boot)
-
-            boot_test_ind = []
-            for train_index, test_index in boot_cv.split(X_train, y_train):
-                boot_test_ind.append(test_index.tolist())
-
-            boot_test_ind = [x for boot in boot_test_ind for x in boot]
-            boot_inds.append(boot_test_ind)
-
-            y_train_pred = cross_val_predict(clf, X_train[:, :, i], y_train, cv=boot_cv)
-            boot_res[boot, :] = y_train_pred.reshape(1,-1)
-        all_pred.append(np.mean(boot_res, axis=0))
-        all_pred_ind.append(boot_inds)
-
-        # Random network activations - LR
-        # random_scores = cross_validate(clf, rX_train[:, :, i], y_train, scoring=scoring, cv=cv, return_train_score=True)
-        # all_random_scores.append(random_scores)
-        # mean_accuracy = np.mean(random_scores['test_accuracy'])
-        # mean_f1 = np.mean(random_scores['test_f1'])
-        # mean_recall = np.mean(random_scores['test_recall'])
-        # mean_precision = np.mean(random_scores['test_precision'])
-        # print(f"Mean accuracy random: {mean_accuracy}, std {np.std(random_scores['test_accuracy'])}") #0.555
-        # print(f"Mean f1 random: {mean_f1}, std {np.std(random_scores['test_f1'])}") #0.557
-        # print(f"Mean recall random: {mean_recall}, std {np.std(random_scores['test_recall'])} ") #0.476
-        # print(f"Mean precision random: {mean_precision}, std {np.std(random_scores['test_precision'])}") #0.672
-    
-    shell()
-
-def pls_da(X_train, y_train, X_test):
-    from sklearn.cross_decomposition import PLSRegression
-
-    # Define the PLS object for binary classification
-    plsda = PLSRegression(n_components=2)
-    
-    # Fit the training set
-    plsda.fit(X_train, y_train)
-    
-    # Binary prediction on the test set, done with thresholding
-    binary_prediction = (plsda.predict(X_test)[:,0] > 0.5).astype('uint8')
-    
-    return binary_prediction
-
-def PLS_model(data, exp_features, random_features):
-    from sklearn.linear_model import LogisticRegressionCV, LogisticRegression
-    from sklearn.metrics import f1_score, classification_report, confusion_matrix
-    from sklearn.model_selection import RepeatedKFold, StratifiedKFold, GridSearchCV, cross_validate, train_test_split, cross_val_predict, GroupShuffleSplit
-    from sklearn.utils.class_weight import compute_class_weight
-    from sklearn.pipeline import make_pipeline, Pipeline
-    import statsmodels.api as sm
-    from sklearn import preprocessing
-    from yellowbrick.model_selection import RFECV
-    from sklearn.cross_decomposition import PLSRegression
-
-    # Extract features
-    layers = ['layer1', 'layer2', 'layer3', 'layer4', 'layer5']
-
-    print("Creating trial df")
-    file_dir = os.path.join(wd, 'analysis', 'image_paths_exp.csv') # should be cc1
-    image_paths = pd.read_csv(file_dir)['path'].tolist()
-    concepts = pd.unique(concept_selection['concept']).tolist()
-
-    n_trials = len(trial_file)
-    trial_df = pd.DataFrame()
-   
-    layers = ['layer1', 'layer2', 'layer3', 'layer4', 'layer5']
-    n_layers = len(layers)
-    no_mask = [i for i in range(len(trial_file)) if trial_file.iloc[i]['mask_type']=='no_mask']
-    n_mask_trials = n_trials - len(no_mask)
-
-    no_mask_id = 0
-    mask_trials = []
-    for i in range(len(trial_file)):
-
-        tmp = pd.DataFrame()
-        # tmp_single = pd.DataFrame()
-
-        trial = trial_file.iloc[i]
-        trial_id  = i
-
-        # Check if trial is mask trial
-        mask_path = trial['mask_path']
-
-        if mask_path != 'no_mask':
-            mask_trials.append(i)
-            
-            # get target path
-            target_path = trial['ImageID']
-            target_path = os.path.join(wd, target_path[53:])
-
-            # get according activations
-            target_index = image_paths.index(target_path)
-            target_activations  = np.zeros((n_components, n_layers))
-            rtarget_activations  = np.zeros((n_components, n_layers))
-            for i in range(n_layers):
-                layer = layers[i]
-                target_activation = exp_features[layer][target_index, :]
-                target_activations[:, i] = target_activation
-
-                rtarget_activation = random_features[layer][target_index, :]
-                rtarget_activations[:, i] = rtarget_activation
-                        
-            # get mask path
-            mask_path = os.path.join(wd, mask_path[53:])
-
-            # get according activation
-            mask_index = image_paths.index(mask_path)
-            mask_activations  = np.zeros((n_components, n_layers))
-            rmask_activations  = np.zeros((n_components, n_layers))
-            for i in range(n_layers):
-                layer = layers[i]
-                mask_activation = exp_features[layer][mask_index, :]
-                mask_activations[:, i] = mask_activation
-
-                rmask_activation = random_features[layer][mask_index, :]
-                rmask_activations[:, i] = rmask_activation
-
-            # get response for all participants (average?)
-            responses = data[data['index'] == trial_id]['answer'].tolist() #anwer or correct?
-            subject_nrs = data[data['index'] == trial_id]['subject_nr'].tolist()
-            valid = data[data['index'] == trial_id]['valid_cue'].tolist()
-            mask_type = mask_path.split('/')[-3]
-            if mask_type == 'masks':
-                mask_type = mask_path.split('/')[-2]
-            
-            tmp['index'] = [trial_id for i in range(len(responses))]
-            tmp['response'] = responses
-            tmp['valid'] = valid
-            tmp['subject_nr'] = subject_nrs
-            tmp['target_path'] = [target_path for i in range(len(responses))]
-            tmp['mask_path'] = [mask_path for i in range(len(responses))]
-            tmp['mask_type'] = [mask_type for i in range(len(responses))]
-            tmp['mask_activation'] = [mask_activations for i in range(len(responses))]
-            tmp['target_activation'] = [target_activations for i in range(len(responses))]
-            tmp['rmask_activation'] = [rmask_activations for i in range(len(responses))]
-            tmp['rtarget_activation'] = [rtarget_activations for i in range(len(responses))]
-
-            trial_df = pd.concat([trial_df, tmp], ignore_index=True)
-
-            no_mask_id =+ 1
-
-    # Only get valid trials 
-    select_trial_df = trial_df[trial_df['valid']==1].reset_index()
-
-    del trial_df
-    
-    # Activations for all trials, all ppn
-    print("Splitting datasets")
-    X1 = np.zeros((len(select_trial_df), n_components, n_layers))
-    X2 = np.zeros((len(select_trial_df), n_components, n_layers))
-
-    rX1 =  np.zeros((len(select_trial_df), n_components, n_layers))
-    rX2 = np.zeros((len(select_trial_df), n_components, n_layers))
-
-    for i in range(len(select_trial_df)):
-            X1[i, :, :] = select_trial_df['target_activation'].iloc[i]
-            X2[i, :, :] = select_trial_df['mask_activation'].iloc[i]
-            rX1[i, :, :] = select_trial_df['rtarget_activation'].iloc[i]
-            rX2[i, :, :] = select_trial_df['rmask_activation'].iloc[i]
-    X = np.concatenate((X1, X2), axis=1)
-    rX = np.concatenate((rX1, rX2), axis=1)
-    y = np.asarray(select_trial_df['response'])
-
-    del X1, X2, rX1, rX2
-
-    # Split in development (train) and test / balanced for mask type
-    indices = np.arange(len(select_trial_df))
-    X_train, X_test, y_train, y_test, out_train_inds, out_test_inds = train_test_split(X, y, indices, test_size=0.1, stratify=select_trial_df['mask_type'].values, random_state=0)
-
-    X_dev = X[out_train_inds]
-    X_test = X[out_test_inds]
-    rX_dev = rX[out_train_inds]
-    rX_test = rX[out_test_inds]
-    y_dev = y[out_train_inds]
-    y_test = y[out_test_inds]
-
-    # All layers in one predictor
-    all_X1 = np.zeros((len(select_trial_df), n_components * n_layers))
-    all_X2 = np.zeros((len(select_trial_df), n_components * n_layers))
-
-    all_rX1 = np.zeros((len(select_trial_df), n_components * n_layers))
-    all_rX2 = np.zeros((len(select_trial_df), n_components * n_layers))
-
-    for i in range(len(select_trial_df)):
-        for layer in range(n_layers):
-            all_X1[i, layer * n_components : (layer * n_components) + n_components] = select_trial_df['target_activation'].iloc[i][:, layer]
-            all_X2[i, layer * n_components : (layer * n_components) + n_components] = select_trial_df['mask_activation'].iloc[i][:, layer]
-            all_rX1[i, layer * n_components : (layer * n_components) + n_components] = select_trial_df['rtarget_activation'].iloc[i][:, layer]
-            all_rX2[i, layer * n_components : (layer * n_components) + n_components] = select_trial_df['rmask_activation'].iloc[i][:, layer]
-
-    all_X = np.concatenate((all_X1, all_X2), axis=1)
-    all_rX = np.concatenate((all_rX1, all_rX2), axis=1)
-
-    del all_X1, all_X2, all_rX1, all_rX2
-
-    # Split in development (train) and test / balanced for mask type
-    all_X_dev = all_X[out_train_inds]
-    all_X_test = all_X[out_test_inds]
-    all_rX_dev = all_rX[out_train_inds]
-    all_rX_test = all_rX[out_test_inds]
-
-    shell()
-
-    # -------------------------------------------------- PLS model
-    from sklearn.metrics import accuracy_score
-    from sklearn.metrics import f1_score
-    from sklearn.metrics import recall_score
-    from sklearn.metrics import precision_score
-
-    print("Start bootstrap")
-    layers_oi = layers + ['all']
-    n_layers = len(layers_oi)
-    boots = 10
-
-    all_train_accuracies = np.zeros((boots, n_layers))
-    all_train_f1s = np.zeros((boots, n_layers))
-    all_train_recalls = np.zeros((boots, n_layers))
-    all_train_precisions = np.zeros((boots, n_layers))
-    all_train_r_accuracies = np.zeros((boots, n_layers))
-    all_train_r_f1s = np.zeros((boots, n_layers))
-    all_train_r_recalls = np.zeros((boots, n_layers))
-    all_train_r_precisions = np.zeros((boots, n_layers))
-
-    all_test_accuracies = np.zeros((boots, n_layers))
-    all_test_f1s = np.zeros((boots, n_layers))
-    all_test_recalls = np.zeros((boots, n_layers))
-    all_test_precisions = np.zeros((boots, n_layers))
-    all_test_r_accuracies = np.zeros((boots, n_layers))
-    all_test_r_f1s = np.zeros((boots, n_layers))
-    all_test_r_recalls = np.zeros((boots, n_layers))
-    all_test_r_precisions = np.zeros((boots, n_layers))
-
-    # boots_test_inds = []
-    # boots_predictions = []
-
-    for boot in range(boots):
-
-        print(f"boot {boot}")
-        seed = boot
-        # boot_test_inds = []
-        # boot_prediction = {}
-
-        layers_train_accuracies = []
-        layers_train_f1s = []
-        layers_train_recalls = []
-        layers_train_precisions = []
-        layers_train_r_accuracies = []
-        layers_train_r_f1s = []
-        layers_train_r_recalls = []
-        layers_train_r_precisions = []
-
-        layers_test_accuracies = []
-        layers_test_f1s = []
-        layers_test_recalls = []
-        layers_test_precisions = []
-        layers_test_r_accuracies = []
-        layers_test_r_f1s = []
-        layers_test_r_recalls = []
-        layers_test_r_precisions = []
-
-        cval = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
-
-        for i in range(n_layers):
-            layer = layers_oi[i]
-            print(f"{layer}")
-
-            train_accuracies = []
-            train_f1s = []
-            train_recalls = []
-            train_precisions = []
-            train_r_accuracies = []
-            train_r_f1s = []
-            train_r_recalls = []
-            train_r_precisions = []
-
-            test_accuracies = []
-            test_f1s = []
-            test_recalls = []
-            test_precisions = []
-            test_r_accuracies = []
-            test_r_f1s = []
-            test_r_recalls = []
-            test_r_precisions = []
-
-            split_count = 0
-
-            predictions = []
-
-            if layer != 'all':
-                for train, test in cval.split(X_dev, y_dev):
-                    print(f"split : {split_count}")
-
-                    # Scale features
-                    scaler = preprocessing.StandardScaler()
-                    sX_dev_train = scaler.fit_transform(X_dev[train,:,i])
-                    sX_dev_test = scaler.transform(X_dev[test,:,i])
-
-                    rscaler = preprocessing.StandardScaler()
-                    rsX_dev_train = rscaler.fit_transform(rX_dev[train,:,i])
-                    rsX_dev_test = rscaler.transform(rX_dev[test,:,i])
-
-                    # Predict
-                    test_y_pred = pls_da(sX_dev_train, y_dev[train], sX_dev_test)  
-                    test_ry_pred = pls_da(rsX_dev_train, y_dev[train], rsX_dev_test)  
-                    train_y_pred = pls_da(sX_dev_train, y_dev[train], sX_dev_train)  
-                    train_ry_pred = pls_da(rsX_dev_train, y_dev[train], rsX_dev_train) 
-
-                    # Performance - test set
-                    test_accuracies.append(accuracy_score(y_dev[test], test_y_pred))
-                    test_f1s.append(f1_score(y_dev[test], test_y_pred))
-                    test_recalls.append(recall_score(y_dev[test], test_y_pred))
-                    test_precisions.append(precision_score(y_dev[test], test_y_pred))
-
-                    test_r_accuracies.append(accuracy_score(y_dev[test], test_ry_pred))
-                    test_r_f1s.append(f1_score(y_dev[test], test_ry_pred))
-                    test_r_recalls.append(recall_score(y_dev[test], test_ry_pred))
-                    test_r_precisions.append(precision_score(y_dev[test], test_ry_pred))
-
-                    # Performance - train set 
-                    train_accuracies.append(accuracy_score(y_dev[train], train_y_pred))
-                    train_f1s.append(f1_score(y_dev[train], train_y_pred))
-                    train_recalls.append(recall_score(y_dev[train], train_y_pred))
-                    train_precisions.append(precision_score(y_dev[train], train_y_pred))
-
-                    train_r_accuracies.append(accuracy_score(y_dev[train], train_ry_pred))
-                    train_r_f1s.append(f1_score(y_dev[train], train_ry_pred))
-                    train_r_recalls.append(recall_score(y_dev[train], train_ry_pred))
-                    train_r_precisions.append(precision_score(y_dev[train], train_ry_pred))
-        
-                    # for i in range(len(test)):
-                    #     boot_test_inds.append(test[i])
-                    #     predictions.append(test_y_pred[i])
-
-                    split_count +=1     
-            else:
-                for train, test in cval.split(X_dev, y_dev):
-                    print(f"split : {split_count}")
-
-                    # Scale features
-                    scaler = preprocessing.StandardScaler()
-                    sX_dev_train = scaler.fit_transform(all_X_dev[train, :])
-                    sX_dev_test = scaler.transform(all_X_dev[test, :])
-
-                    rscaler = preprocessing.StandardScaler()
-                    rsX_dev_train = rscaler.fit_transform(all_rX_dev[train, :])
-                    rsX_dev_test = rscaler.transform(all_rX_dev[test, :])
-
-                    # Predict
-                    test_y_pred = pls_da(sX_dev_train, y_dev[train], sX_dev_test)  
-                    test_ry_pred = pls_da(rsX_dev_train, y_dev[train], rsX_dev_test)  
-                    train_y_pred = pls_da(sX_dev_train, y_dev[train], sX_dev_train)  
-                    train_ry_pred = pls_da(rsX_dev_train, y_dev[train], rsX_dev_train) 
-
-                    # Performance - test set
-                    test_accuracies.append(accuracy_score(y_dev[test], test_y_pred))
-                    test_f1s.append(f1_score(y_dev[test], test_y_pred))
-                    test_recalls.append(recall_score(y_dev[test], test_y_pred))
-                    test_precisions.append(precision_score(y_dev[test], test_y_pred))
-
-                    test_r_accuracies.append(accuracy_score(y_dev[test], test_ry_pred))
-                    test_r_f1s.append(f1_score(y_dev[test], test_ry_pred))
-                    test_r_recalls.append(recall_score(y_dev[test], test_ry_pred))
-                    test_r_precisions.append(precision_score(y_dev[test], test_ry_pred))
-
-                    # Performance - train set 
-                    train_accuracies.append(accuracy_score(y_dev[train], train_y_pred))
-                    train_f1s.append(f1_score(y_dev[train], train_y_pred))
-                    train_recalls.append(recall_score(y_dev[train], train_y_pred))
-                    train_precisions.append(precision_score(y_dev[train], train_y_pred))
-
-                    train_r_accuracies.append(accuracy_score(y_dev[train], train_ry_pred))
-                    train_r_f1s.append(f1_score(y_dev[train], train_ry_pred))
-                    train_r_recalls.append(recall_score(y_dev[train], train_ry_pred))
-                    train_r_precisions.append(precision_score(y_dev[train], train_ry_pred))
-
-                    # for i in range(len(test)):
-                    #     boot_test_inds.append(test[i])
-                    #     predictions.append(test_y_pred[i])
-
-                    split_count +=1     
-
-            # boot_prediction[layer] = predictions
-
-            layers_train_accuracies.append(np.mean(train_accuracies))
-            layers_train_f1s.append(np.mean(train_f1s))
-            layers_train_recalls.append(np.mean(train_recalls))
-            layers_train_precisions.append(np.mean(train_precisions))
-            layers_train_r_accuracies.append(np.mean(train_r_accuracies))
-            layers_train_r_f1s.append(np.mean(train_r_f1s))
-            layers_train_r_recalls.append(np.mean(train_r_recalls))
-            layers_train_r_precisions.append(np.mean(train_r_precisions))
-
-            layers_test_accuracies.append(np.mean(test_accuracies))
-            layers_test_f1s.append(np.mean(test_f1s))
-            layers_test_recalls.append(np.mean(test_recalls))
-            layers_test_precisions.append(np.mean(test_precisions))
-            layers_test_r_accuracies.append(np.mean(test_r_accuracies))
-            layers_test_r_f1s.append(np.mean(test_r_f1s))
-            layers_test_r_recalls.append(np.mean(test_r_recalls))
-            layers_test_r_precisions.append(np.mean(test_r_precisions))
-
-        # boots_predictions.append(boot_prediction)
-
-        all_train_accuracies[boot, :] = layers_train_accuracies
-        all_train_f1s[boot, :] = layers_train_f1s
-        all_train_recalls[boot, :] = layers_train_recalls
-        all_train_precisions[boot, :] = layers_train_precisions
-        all_train_r_accuracies[boot, :] = layers_train_r_accuracies
-        all_train_r_f1s[boot, :] = layers_train_r_f1s
-        all_train_r_recalls[boot, :] = layers_train_r_recalls
-        all_train_r_precisions[boot, :] = layers_train_r_precisions
-
-        all_test_accuracies[boot, :] = layers_test_accuracies
-        all_test_f1s[boot, :] = layers_test_f1s
-        all_test_recalls[boot, :] = layers_test_recalls
-        all_test_precisions[boot, :] = layers_test_precisions
-        all_test_r_accuracies[boot, :] = layers_test_r_accuracies
-        all_test_r_f1s[boot, :] =  layers_test_r_f1s
-        all_test_r_recalls[boot, :] = layers_test_r_recalls
-        all_test_r_precisions[boot, :] = layers_test_r_precisions
-
-    score_df = pd.DataFrame()
-    score_df['layer'] = layers_oi
-    score_df['m_test_accuracy'] = np.mean(all_test_accuracies, axis=0)
-    score_df['m_test_f1'] = np.mean(all_test_f1s, axis=0)
-    score_df['m_test_precision'] = np.mean(all_test_precisions, axis=0)
-    score_df['m_test_recall'] = np.mean(all_test_recalls, axis=0)
-    score_df['m_test_r_accuracy'] = np.mean(all_test_r_accuracies, axis=0)
-    score_df['m_test_r_f1'] = np.mean(all_test_r_f1s, axis=0)
-    score_df['m_test_r_precision'] = np.mean(all_test_r_precisions, axis=0)
-    score_df['m_test_r_recall'] = np.mean(all_test_r_recalls, axis=0)
-    score_df['m_train_accuracy'] = np.mean(all_train_accuracies, axis=0)
-    score_df['m_train_f1'] = np.mean(all_train_f1s, axis=0)
-    score_df['m_train_precision'] = np.mean(all_train_precisions, axis=0)
-    score_df['m_train_recall'] = np.mean(all_train_recalls, axis=0)
-    score_df['m_train_r_accuracy'] = np.mean(all_train_r_accuracies, axis=0)
-    score_df['m_train_r_f1'] = np.mean(all_train_r_f1s, axis=0)
-    score_df['m_train_r_precision'] = np.mean(all_train_r_precisions, axis=0)
-    score_df['m_train_r_recall'] = np.mean(all_train_r_recalls, axis=0)
-    score_df['s_test_accuracy'] = np.std(all_test_accuracies, axis=0)
-    score_df['s_test_f1'] = np.std(all_test_f1s, axis=0)
-    score_df['s_test_precision'] = np.std(all_test_precisions, axis=0)
-    score_df['s_test_recall'] = np.std(all_test_recalls, axis=0)
-    score_df['s_test_r_accuracy'] = np.std(all_test_r_accuracies, axis=0)
-    score_df['s_test_r_f1'] = np.std(all_test_r_f1s, axis=0)
-    score_df['s_test_r_precision'] = np.std(all_test_r_precisions, axis=0)
-    score_df['s_test_r_recall'] = np.std(all_test_r_recalls, axis=0)
-    score_df['s_train_accuracy'] = np.std(all_train_accuracies, axis=0)
-    score_df['s_train_f1'] = np.std(all_train_f1s, axis=0)
-    score_df['s_train_precision'] = np.std(all_train_precisions, axis=0)
-    score_df['s_train_recall'] = np.std(all_train_recalls, axis=0)
-    score_df['s_train_r_accuracy'] = np.std(all_train_r_accuracies, axis=0)
-    score_df['s_train_r_f1'] = np.std(all_train_r_f1s, axis=0)
-    score_df['s_train_r_precision'] = np.std(all_train_r_precisions, axis=0)
-    score_df['s_train_r_recall'] = np.std(all_train_r_recalls, axis=0)
-
-    #  Plot performance over layers
-    n_masks = len(pd.unique(select_trial_df['mask_type']))
-
-    fig, ax =  plt.subplots(2,2, sharex=True, dpi=100, figsize=(14,7))
-    fig.suptitle('PLS model performance')
-    fig.supxlabel('Layer')
-    fig.supylabel('Score')
-    sns.lineplot(data=score_df, x='layer', y='m_train_accuracy', color='red', linestyle='--', ax=ax[0,0])
-    sns.lineplot(data=score_df, x='layer', y='m_test_accuracy', color='red', ax=ax[0,0])
-    ax[0,0].fill_between(np.arange(n_layers), score_df['m_train_accuracy'] - score_df['s_train_accuracy'], score_df['m_train_accuracy'] + score_df['s_train_accuracy'], color= 'red', alpha=0.2)
-    ax[0,0].fill_between(np.arange(n_layers), score_df['m_test_accuracy'] - score_df['s_test_accuracy'], score_df['m_test_accuracy'] + score_df['s_test_accuracy'], color= 'red', alpha=0.2)
-    sns.lineplot(data=score_df, x='layer', y='m_train_r_accuracy', color='firebrick', linestyle='--', ax=ax[0,0])
-    sns.lineplot(data=score_df, x='layer', y='m_test_r_accuracy', color='firebrick', ax=ax[0,0])
-    ax[0,0].fill_between(np.arange(n_layers), score_df['m_train_r_accuracy'] - score_df['s_train_r_accuracy'], score_df['m_train_r_accuracy'] + score_df['s_train_r_accuracy'], color= 'firebrick', alpha=0.2)
-    ax[0,0].fill_between(np.arange(n_layers), score_df['m_test_r_accuracy'] - score_df['s_test_r_accuracy'],  score_df['m_test_r_accuracy'] +  score_df['s_test_r_accuracy'], color= 'firebrick', alpha=0.2)
-    ax[0,0].set_title("Accuracy")
-    ax[0,0].yaxis.label.set_visible(False)
-    ax[0,0].xaxis.label.set_visible(False)
-    ax[0,0].legend(handles=[
-        Line2D([], [], marker='_', color="red", label="Pretrained"), 
-        Line2D([], [], marker='_', color="firebrick", label="Random")], loc='upper right')
-    sns.lineplot(data=score_df, x='layer', y='m_train_f1', color='blue', linestyle='--', ax=ax[0,1])
-    sns.lineplot(data=score_df, x='layer', y='m_test_f1', color='blue', ax=ax[0,1])
-    ax[0,1].fill_between(np.arange(n_layers), score_df['m_train_f1'] - score_df['s_train_f1'], score_df['m_train_f1'] + score_df['s_train_f1'], color= 'blue', alpha=0.2)
-    ax[0,1].fill_between(np.arange(n_layers), score_df['m_test_f1'] - score_df['s_test_f1'],  score_df['m_test_f1'] +  score_df['s_test_f1'], color= 'blue', alpha=0.2)
-    sns.lineplot(data=score_df, x='layer', y='m_train_r_f1', color='darkblue', linestyle='--', ax=ax[0,1])
-    sns.lineplot(data=score_df, x='layer', y='m_test_r_f1', color='darkblue', ax=ax[0,1])
-    ax[0,1].fill_between(np.arange(n_layers), score_df['m_train_r_f1'] - score_df['s_train_r_f1'], score_df['m_train_r_f1'] + score_df['s_train_r_f1'], color= 'darkblue', alpha=0.2)
-    ax[0,1].fill_between(np.arange(n_layers), score_df['m_test_r_f1'] - score_df['s_test_r_f1'],  score_df['m_test_r_f1'] +  score_df['s_test_r_f1'], color= 'darkblue', alpha=0.2)
-    ax[0,1].set_title("F1")
-    ax[0,1].yaxis.label.set_visible(False)
-    ax[0,1].xaxis.label.set_visible(False)
-    ax[0,1].legend(handles=[
-        Line2D([], [], marker='_', color="blue", label="Pretrained"),
-        Line2D([], [], marker='_', color="darkblue", label="Random")], loc='upper right')
-    sns.lineplot(data=score_df, x='layer', y='m_train_precision', color='palegreen', linestyle='--', ax=ax[1,0])
-    sns.lineplot(data=score_df, x='layer', y='m_test_precision', color='palegreen', ax=ax[1,0])
-    ax[1,0].fill_between(np.arange(n_layers), score_df['m_train_precision'] - score_df['s_train_precision'], score_df['m_train_precision'] + score_df['s_train_precision'], color= 'palegreen', alpha=0.2)
-    ax[1,0].fill_between(np.arange(n_layers), score_df['m_test_precision'] - score_df['s_test_precision'],  score_df['m_test_precision'] +  score_df['s_test_precision'], color= 'palegreen', alpha=0.2)
-    sns.lineplot(data=score_df, x='layer', y='m_train_r_precision', color='darkgreen', linestyle='--', ax=ax[1,0])
-    sns.lineplot(data=score_df, x='layer', y='m_test_r_precision', color='darkgreen', ax=ax[1,0])
-    ax[1,0].fill_between(np.arange(n_layers), score_df['m_train_r_precision'] - score_df['s_train_r_precision'], score_df['m_train_r_precision'] + score_df['s_train_r_precision'], color= 'darkgreen', alpha=0.2)
-    ax[1,0].fill_between(np.arange(n_layers), score_df['m_test_r_precision'] - score_df['s_test_r_precision'],  score_df['m_test_r_precision'] +  score_df['s_test_r_precision'], color= 'darkgreen', alpha=0.2)
-    ax[1,0].set_title("Precision")
-    ax[1,0].yaxis.label.set_visible(False)
-    ax[1,0].xaxis.label.set_visible(False)
-    ax[1,0].set_xticklabels(["1","2","3","4","5", "all"])
-    ax[1,0].legend(handles=[
-        Line2D([], [], marker='_', color="palegreen", label="Pretrained"),
-        Line2D([], [], marker='_', color="darkgreen", label="Random")], loc='upper right')
-    sns.lineplot(data=score_df, x='layer', y='m_train_recall', color='peachpuff', linestyle='--', ax=ax[1,1])
-    sns.lineplot(data=score_df, x='layer', y='m_test_recall', color='peachpuff', ax=ax[1,1])
-    ax[1,1].fill_between(np.arange(n_layers), score_df['m_train_recall'] - score_df['s_train_recall'], score_df['m_train_recall'] + score_df['s_train_recall'], color= 'peachpuff', alpha=0.2)
-    ax[1,1].fill_between(np.arange(n_layers), score_df['m_test_recall'] - score_df['s_test_recall'],  score_df['m_test_recall'] +  score_df['s_test_recall'], color= 'peachpuff', alpha=0.2)
-    sns.lineplot(data=score_df, x='layer', y='m_train_r_recall', color='darkorange', linestyle='--', ax=ax[1,1])
-    sns.lineplot(data=score_df, x='layer', y='m_test_r_recall', color='darkorange', ax=ax[1,1])
-    ax[1,1].fill_between(np.arange(n_layers), score_df['m_train_r_recall'] - score_df['s_train_r_recall'], score_df['m_train_r_recall'] + score_df['s_train_r_recall'], color= 'darkorange', alpha=0.2)
-    ax[1,1].fill_between(np.arange(n_layers), score_df['m_test_r_recall'] - score_df['s_test_r_recall'],  score_df['m_test_r_recall'] +  score_df['s_test_r_recall'], color= 'darkorange', alpha=0.2)
-    ax[1,1].set_title("Recall")
-    ax[1,1].yaxis.label.set_visible(False)
-    ax[1,1].xaxis.label.set_visible(False)
-    ax[1,1].set_xticklabels(["1","2","3","4","5", "all"])
-    ax[1,1].legend(handles=[        
-        Line2D([], [], marker='_', color="peachpuff", label="Pretrained"),
-        Line2D([], [], marker='_', color="darkorange", label="Random")], loc='upper right')
-
-    plt.figlegend(handles = [
-        Line2D([], [], marker='_', color="black", label="Test score"),
-        Line2D([], [], marker='_', color="black", label="Training score", linestyle="--")
-        ])
-
-    fig.tight_layout()
-    file_name = os.path.join(wd, 'analysis/TrainTest_Score_across_layers_PLS.png')
-    fig.savefig(file_name)  
-
-    #  Plot performance over layers
-    n_masks = len(pd.unique(select_trial_df['mask_type']))
-
-    fig, ax =  plt.subplots(2,2, sharex=True, dpi=100, figsize=(14,7))
-    fig.suptitle('PLS model performance')
-    fig.supxlabel('Layer')
-    fig.supylabel('Score')
-    sns.lineplot(data=score_df, x='layer', y='m_train_accuracy', color='red', linestyle='--', ax=ax[0,0], ci=95)
-    sns.lineplot(data=score_df, x='layer', y='m_test_accuracy', color='red', ax=ax[0,0])
-    ax[0,0].fill_between(np.arange(n_layers), score_df['ci_train_accuracy'][0], score_df['ci_train_accuracy'][1], color= 'red', alpha=0.2)
-    ax[0,0].fill_between(np.arange(n_layers), score_df['ci_test_accuracy'][0], score_df['ci_test_accuracy'][1], color= 'red', alpha=0.2)
-    sns.lineplot(data=score_df, x='layer', y='m_train_r_accuracy', color='firebrick', linestyle='--', ax=ax[0,0])
-    sns.lineplot(data=score_df, x='layer', y='m_test_r_accuracy', color='firebrick', ax=ax[0,0])
-    ax[0,0].fill_between(np.arange(n_layers), score_df['ci_train_r_accuracy'][0], score_df['ci_train_r_accuracy'][1], color= 'firebrick', alpha=0.2)
-    ax[0,0].fill_between(np.arange(n_layers), score_df['ci_test_r_accuracy'][0], score_df['ci_test_r_accuracy'][1], color= 'firebrick', alpha=0.2)
-    ax[0,0].set_title("Accuracy")
-    ax[0,0].yaxis.label.set_visible(False)
-    ax[0,0].xaxis.label.set_visible(False)
-    ax[0,0].legend(handles=[
-        Line2D([], [], marker='_', color="red", label="Pretrained"), 
-        Line2D([], [], marker='_', color="firebrick", label="Random")], loc='upper right')
-    sns.lineplot(data=score_df, x='layer', y='m_train_f1', color='blue', linestyle='--', ax=ax[0,1])
-    sns.lineplot(data=score_df, x='layer', y='m_test_f1', color='blue', ax=ax[0,1])
-    ax[0,1].fill_between(np.arange(n_layers), score_df['ci_train_f1'][0], score_df['ci_train_f1'][1], color= 'blue', alpha=0.2)
-    ax[0,1].fill_between(np.arange(n_layers), score_df['ci_test_f1'][0], score_df['ci_test_f1'][1], color= 'blue', alpha=0.2)
-    sns.lineplot(data=score_df, x='layer', y='m_train_r_f1', color='darkblue', linestyle='--', ax=ax[0,1])
-    sns.lineplot(data=score_df, x='layer', y='m_test_r_f1', color='darkblue', ax=ax[0,1])
-    ax[0,1].fill_between(np.arange(n_layers), score_df['ci_train_r_f1'][0], score_df['ci_train_r_f1'][1], color= 'darkblue', alpha=0.2)
-    ax[0,1].fill_between(np.arange(n_layers), score_df['ci_test_r_f1'][0], score_df['ci_test_r_f1'][1], color= 'darkblue', alpha=0.2)
-    ax[0,1].set_title("F1")
-    ax[0,1].yaxis.label.set_visible(False)
-    ax[0,1].xaxis.label.set_visible(False)
-    ax[0,1].legend(handles=[
-        Line2D([], [], marker='_', color="blue", label="Pretrained"),
-        Line2D([], [], marker='_', color="darkblue", label="Random")], loc='upper right')
-    sns.lineplot(data=score_df, x='layer', y='m_train_precision', color='palegreen', linestyle='--', ax=ax[1,0])
-    sns.lineplot(data=score_df, x='layer', y='m_test_precision', color='palegreen', ax=ax[1,0])
-    ax[1,0].fill_between(np.arange(n_layers), score_df['ci_train_precision'][0], score_df['ci_train_precision'][1], color= 'palegreen', alpha=0.2)
-    ax[1,0].fill_between(np.arange(n_layers), score_df['ci_test_precision'][0], score_df['ci_test_precision'][1], color= 'palegreen', alpha=0.2)
-    sns.lineplot(data=score_df, x='layer', y='m_train_r_precision', color='darkgreen', linestyle='--', ax=ax[1,0])
-    sns.lineplot(data=score_df, x='layer', y='m_test_r_precision', color='darkgreen', ax=ax[1,0])
-    ax[1,0].fill_between(np.arange(n_layers), score_df['ci_train_r_precision'][0], score_df['ci_train_r_precision'][1], color= 'darkgreen', alpha=0.2)
-    ax[1,0].fill_between(np.arange(n_layers), score_df['ci_test_r_precision'][0], score_df['ci_test_r_precision'][1], color= 'darkgreen', alpha=0.2)
-    ax[1,0].set_title("Precision")
-    ax[1,0].yaxis.label.set_visible(False)
-    ax[1,0].xaxis.label.set_visible(False)
-    ax[1,0].set_xticklabels(["1","2","3","4","5", "all"])
-    ax[1,0].legend(handles=[
-        Line2D([], [], marker='_', color="palegreen", label="Pretrained"),
-        Line2D([], [], marker='_', color="darkgreen", label="Random")], loc='upper right')
-    sns.lineplot(data=score_df, x='layer', y='m_train_recall', color='peachpuff', linestyle='--', ax=ax[1,1])
-    sns.lineplot(data=score_df, x='layer', y='m_test_recall', color='peachpuff', ax=ax[1,1])
-    ax[1,1].fill_between(np.arange(n_layers), score_df['ci_train_recall'][0], score_df['ci_train_recall'][1], color= 'peachpuff', alpha=0.2)
-    ax[1,1].fill_between(np.arange(n_layers), score_df['ci_test_recall'][0], score_df['ci_test_recall'][1], color= 'peachpuff', alpha=0.2)
-    sns.lineplot(data=score_df, x='layer', y='m_train_r_recall', color='darkorange', linestyle='--', ax=ax[1,1])
-    sns.lineplot(data=score_df, x='layer', y='m_test_r_recall', color='darkorange', ax=ax[1,1])
-    ax[1,1].fill_between(np.arange(n_layers), score_df['ci_train_r_recall'][0], score_df['ci_train_r_recall'][1], color= 'darkorange', alpha=0.2)
-    ax[1,1].fill_between(np.arange(n_layers), score_df['ci_test_r_recall'][0], score_df['ci_train_r_recall'][1],  color= 'darkorange', alpha=0.2)
-    ax[1,1].set_title("Recall")
-    ax[1,1].yaxis.label.set_visible(False)
-    ax[1,1].xaxis.label.set_visible(False)
-    ax[1,1].set_xticklabels(["1","2","3","4","5", "all"])
-    ax[1,1].legend(handles=[        
-        Line2D([], [], marker='_', color="peachpuff", label="Pretrained"),
-        Line2D([], [], marker='_', color="darkorange", label="Random")], loc='upper right')
-
-    plt.figlegend(handles = [
-        Line2D([], [], marker='_', color="black", label="Test score"),
-        Line2D([], [], marker='_', color="black", label="Training score", linestyle="--")
-        ])
-
-    fig.tight_layout()
-    file_name = os.path.join(wd, 'analysis/TrainTest_Score_across_layers_PLS.png')
-    fig.savefig(file_name)  
-
-
-    # # Cross validate prediction
-    # print(f"Cross val prediction")
-    # boot_res = []
-    # boot_inds = []
-    # for boot in range(10):
-    #     print(f"Boot {boot}")
-    #     boot_cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=i)
-
-    #     boot_test_ind = []
-    #     for train_index, test_index in boot_cv.split(X_train, y_train):
-    #         # boot_test_inds.append(test_index)
-    #         boot_test_ind.append(test_index.tolist())
-
-    #     boot_test_ind = [x for boot in boot_test_ind for x in boot]
-    #     boot_inds.append(boot_test_ind)
-
-    #     y_train_pred = cross_val_predict(clf, X_train[:, :, i], y_train, cv=boot_cv)
-    #     boot_res.append(y_train_pred)
-    # all_pred.append(boot_res)
-    # all_pred_ind.append(boot_inds)
-
-
-
-    
 
 
 def distance_analysis(data, exp_features, random_features):
@@ -1820,7 +977,6 @@ def distance_analysis(data, exp_features, random_features):
     Xr_train = X_random[out_train_inds]
     Xr_test = X_random[out_train_inds]
 
-    shell()
 
     # Simple model (without feature eliminatinon / grid search) + CV
     class_weights = compute_class_weight(class_weight='balanced', classes=np.array([0,1]), y=y_train)
@@ -2092,10 +1248,11 @@ random_features = load_features(atype='random')
 bdata = preprocess_bdata()
 
 # Set up log regression model
-logit_model(bdata, exp_features, random_features)
+# logit_model(bdata, exp_features, random_features)
 
-# Set up PLS model
-# PLS_model(bdata, exp_features, random_features)
+# Model per mask
+model_per_mask()
+
 
 # Distance analysis
 # distance_analysis(bdata, exp_features, random_features)
