@@ -17,6 +17,7 @@ import pandas as pd
 import pickle as pkl
 import json
 import joblib
+import random
 import matplotlib.pyplot as plt
 from scipy import stats
 from IPython import embed as shell
@@ -246,7 +247,7 @@ class MyPipeline(Pipeline):
         return self._final_estimator.feature_importances_
 
 
-def PLS_model(data, features, exp = True, thres = 0):
+def pre_model(data, features, exp = True, thres = 0):
     file_dir = os.path.join(wd, 'analysis', 'image_paths_exp.csv') # should be cc1
     image_paths = pd.read_csv(file_dir)['path'].tolist()
     concepts = pd.unique(concept_selection['concept']).tolist()
@@ -379,7 +380,6 @@ def PLS_model(data, features, exp = True, thres = 0):
         pkl.dump(X2, file)
         file.close()
     
-
     # Mask / no mask mean accuracy 
     type_means = trial_df.groupby(['mask_type'])['correct'].mean()
     
@@ -461,7 +461,6 @@ def PLS_model(data, features, exp = True, thres = 0):
     print(p_values)
     p_values < 0.05
 
-
     # Calc mask efficacy
     efficacies = []
     for i in range(n_mask_trials):
@@ -511,10 +510,35 @@ def PLS_model(data, features, exp = True, thres = 0):
     plt.savefig(image_path)
     plt.clf()
 
-    shell()
+def PLS_model(boot=0, exp=True):
+    from sklearn.cross_decomposition import PLSRegression
+
+    # Set seed
+    random.seed(boot)
+
+    n_trials = len(trial_file)   
+    layers_oi = ['layer1', 'layer2', 'layer3', 'layer4', 'layer5', 'all']
+    n_layers = len(layers_oi)
+    no_mask = [i for i in range(len(trial_file)) if trial_file.iloc[i]['mask_type']=='no_mask']
+    n_mask_trials = n_trials - len(no_mask)
+
+    # Load GA_df_masks
+    file_path = os.path.join(wd,  'analysis/stats/GA_df_masks.csv')
+    GA_df_masks = pd.read_csv(file_path)
+    y = np.asarray(GA_df_masks['Efficacy'])
+
+    # Load X 
+    file_path = os.path.join(wd,  'analysis/stats/')
+
+    if exp == True:
+        X = glob.glob(os.path.join(file_path, 'X'))[0]
+    else:
+        X = glob.glob(os.path.join(file_path, 'X_random'))[0]
+    file = open(X, 'rb')
+    X = pkl.load(file)
+    file.close()
 
     # Set up pipeline
-    from sklearn.cross_decomposition import PLSRegression
     lr = PLSRegression(n_components=20)
     clf = make_pipeline(preprocessing.StandardScaler(), lr)
     
@@ -532,85 +556,192 @@ def PLS_model(data, features, exp = True, thres = 0):
             os.makedirs(file_path)
 
     if exp == True:
-        np.save(os.path.join(file_path, f"PLS_predictions.npy"), preds)
+        np.save(os.path.join(file_path, f"PLS_predictions_{boot}.npy"), preds)
     else: 
-        np.save(os.path.join(file_path, f"PLS_predictions_random.npy"), preds)
+        np.save(os.path.join(file_path, f"r_PLS_predictions_{boot}.npy"), preds)
 
-    # Inspect model
-    mins = []
-    maxs = []
-    for i in range(n_layers):
-        layer = layers[i]
-        min = np.min(preds[:, i])
-        max = np.max(preds[:, i])
-        mins.append(min)
-        maxs.append(max)
-    print(f"max: {maxs}")
-    print(f"min: {mins}")
 
+def model_plots():
+
+    shell()
     # MAE error - per layer
-    # file_path = os.path.join(wd, 'analysis/predictions/')
-    # preds = glob.glob(os.path.join(file_path, 'PLS_predictions.npy'))[0]
-    # preds = np.load(preds)
+    file_path = os.path.join(wd, 'analysis/predictions/')
+    files = glob.glob(file_path + 'PLS_predictions_*.npy')
+    r_files = glob.glob(file_path + 'r_PLS_predictions_*.npy')
 
-    MAEs = []
-    r2s = []
-    for i in range(n_layers + 1):
-        print(f'Layer {i}')
+    n_trials = len(trial_file)   
+    layers_oi = ['layer1', 'layer2', 'layer3', 'layer4', 'layer5', 'all']
+    n_layers = len(layers_oi)
+    no_mask = [i for i in range(len(trial_file)) if trial_file.iloc[i]['mask_type']=='no_mask']
+    n_mask_trials = n_trials - len(no_mask)
 
-        y_pred = preds[:, i]
-        error = MAE(y, y_pred)
-        r2 = (pearsonr(y, y_pred)[0])**2
-        MAEs.append(error)
-        r2s.append(r2)
-    
-    MAE_df = pd.concat([pd.DataFrame(MAEs), pd.DataFrame(layers_oi), pd.DataFrame(r2s)], axis=1)
-    MAE_df.columns = ['MAE', 'layer', 'r2']
+    # Load GA_df_masks
+    file_path = os.path.join(wd,  'analysis/stats/GA_df_masks.csv')
+    GA_df_masks = pd.read_csv(file_path)
+    y = np.asarray(GA_df_masks['Efficacy'])
+
+    big_df = pd.DataFrame()
+    r_big_df = pd.DataFrame()
+    for j in range(len(files)):
+
+        file = files[j]
+        r_file = r_files[j]
+
+        preds = np.load(file)
+        MAEs = []
+        r2s = []
+
+        r_preds = np.load(r_file)
+        r_MAEs = []
+        r_r2s = []
+
+        for i in range(n_layers):
+            print(f'Layer {i}')
+
+            y_pred = preds[:, i]
+            error = MAE(y, y_pred)
+            r2 = (pearsonr(y, y_pred)[0])**2
+            MAEs.append(error)
+            r2s.append(r2)
+
+            r_y_pred = r_preds[:, i]
+            r_error = MAE(y, r_y_pred)
+            r2 = (pearsonr(y, r_y_pred)[0])**2
+            r_MAEs.append(r_error)
+            r_r2s.append(r2)
+
+        boot_id = [j] * len(r2s)
+        MAE_df = pd.concat([pd.DataFrame(MAEs), pd.DataFrame(layers_oi), pd.DataFrame(r2s), pd.DataFrame(boot_id)], axis=1)
+        MAE_df.columns = ['MAE', 'layer', 'r2', 'boot']
+        r_MAE_df = pd.concat([pd.DataFrame(r_MAEs), pd.DataFrame(layers_oi), pd.DataFrame(r_r2s), pd.DataFrame(boot_id)], axis=1)
+        r_MAE_df.columns = ['MAE', 'layer', 'r2', 'boot']
+
+        big_df = pd.concat([big_df, MAE_df], axis=0)
+        r_big_df = pd.concat([r_big_df, r_MAE_df], axis=0)
 
     # Save 
     file_path = os.path.join(wd, 'analysis/stats/')
     if not os.path.exists(file_path):
             os.makedirs(file_path)
-    MAE_df.to_csv(os.path.join(file_path, 'MAE_per_layer.csv'), index=False)
-
-    # MAE plot
-    fig, axes = plt.subplots(1, figsize=(4,3))
-    sns.set_palette('colorblind')
-    sns.set_style("ticks")
-    sns.pointplot(data=MAE_df, x="layer", y="MAE")
-    sns.despine(offset=10)
-    xlabels = ['layer 1', 'layer 2', 'layer 3', 'layer 4', 'layer 5', 'all']
-    plt.xticks(np.arange(len(xlabels)),xlabels)
-    plt.tight_layout()
-
-    if exp == True:
-        image_path = os.path.join(wd, f'analysis/MAEs-layers.png')
-    else:
-        image_path = os.path.join(wd, f'analysis/MAEs-layers-random.png')
-    plt.savefig(image_path)
-    plt.clf()
+    big_df.to_csv(os.path.join(file_path, 'R2_per_layer.csv'), index=False)
+    r_big_df.to_csv(os.path.join(file_path, 'r_R2_per_layer.csv'), index=False)
 
     # R2 plot
+    fig, axes = plt.subplots(1, figsize=(6,4))
     sns.set_palette('colorblind')
+    sns.set_style('white')
     sns.set_style("ticks")
-    sns.pointplot(data=MAE_df, x="layer", y="r2")
+    # sns.pointplot(data=big_df, x="layer", y="r2", errorbar='ci', capsize=0.3)
+    sns.pointplot(data=big_df, x="layer", y="r2", color ='blue', label='pretrained')
+    sns.pointplot(data=r_big_df, x="layer", y="r2", color = 'lightblue', label='random')
     sns.despine(offset=15)
     xlabels = ['layer 1', 'layer 2', 'layer 3', 'layer 4', 'layer 5', 'all']
     plt.xticks(np.arange(len(xlabels)),xlabels)
-    # plt.ylim([0.1, 0.35])
+    plt.ylabel('$r^2$')
+    plt.ylim([0, 0.5])
+    plt.legend(handles=[
+        Line2D([], [], marker='_', color="blue", label="pretrained"), 
+        Line2D([], [], marker='_', color="lightblue", label="random")], bbox_to_anchor=(1.04, 1), loc="upper left")
     plt.tight_layout()
-    if exp == True:
-        image_path = os.path.join(wd, f'analysis/r2-layers.png')
-    else:
-        image_path = os.path.join(wd, f'analysis/r2-layers_random.png')
-
+    image_path = os.path.join(wd, f'analysis/r2-layers.png')
     plt.savefig(image_path)
     plt.clf()
 
     # Evaluate MAE per mask type
+    masks_ordered = ['1_natural', '5_lines', '6_blocked', '4_geometric', '2_scrambled']
+    big_mask_df = pd.DataFrame()
+
+    for k in range(len(files)):
+
+        file = files[k]
+        r_file = r_files[k]
+
+        preds = np.load(file)
+        r_preds = np.load(r_file)
+
+        MAE_mask_df = pd.DataFrame()
+        mask_MAEs = []
+        mask_r2s = []
+        r_mask_MAEs = []
+        r_mask_r2s = []
+        layer_nr = layers_oi * len(masks_ordered)
+        mask_nr = []
+
+        for j in range(len(masks_ordered)):
+
+            mask_type = masks_ordered[j]
+            mask_name = mask_type.split("_")[1]
+            mask_ids = np.array(GA_df_masks[GA_df_masks['Mask type']== mask_type].index)
+
+            for i in range(n_layers):
+
+                layer = layers_oi[i]
+
+                mask_pred = preds[mask_ids, i]
+                r_mask_pred = r_preds[mask_ids, i]
+                y_mask = y[mask_ids]
+
+                r2 = (pearsonr(y_mask, mask_pred)[0])**2
+                error = MAE(y_mask, mask_pred)
+                mask_MAEs.append(error)
+                mask_r2s.append(r2)
+
+                r_r2 = (pearsonr(y_mask, r_mask_pred)[0])**2
+                r_error = MAE(y_mask, r_mask_pred)
+                r_mask_MAEs.append(r_error)
+                r_mask_r2s.append(r_r2)
+
+                mask_nr.append(mask_name)
+        
+        MAE_mask_df['MAE'] = mask_MAEs
+        MAE_mask_df['r2'] = mask_r2s
+        MAE_mask_df['r_MAE'] = r_mask_MAEs
+        MAE_mask_df['r_r2'] = r_mask_r2s
+        MAE_mask_df['Mask'] = mask_nr
+        MAE_mask_df['Layer'] = layer_nr
+        MAE_mask_df['boot'] = [k]*len(layer_nr)
+        
+        big_mask_df = pd.concat([big_mask_df, MAE_mask_df], axis=0)
+
+    # Save 
+    file_path = os.path.join(wd, 'analysis/stats/')
+    if not os.path.exists(file_path):
+            os.makedirs(file_path)
+    big_mask_df.to_csv(os.path.join(file_path, 'r2_per_mask.csv'), index=False)
+
+    # Plot r2 per mask per layer
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4), sharey=True)
+    sns.pointplot(data=big_mask_df, x="Layer", y="r_r2", hue='Mask', ax=axes[0])
+    sns.despine(offset=10)
+    xlabels = ['layer 1', 'layer 2', 'layer 3', 'layer 4', 'layer 5', 'all']
+    axes[0].set_title('Random')
+    axes[0].set_xticklabels(xlabels)
+    axes[0].set_xlabel('')
+    axes[0].set_ylabel('$r^2$')
+    axes[0].set_ylim([0, 0.5])
+    axes[0].legend([],[], frameon=False)
+    sns.pointplot(data=big_mask_df, x="Layer", y="r2", hue='Mask', ax=axes[1], sharey=axes[0])
+    axes[1].set_title('Pretrained')
+    axes[1].axes.yaxis.set_visible(False)
+    axes[1].spines['left'].set_visible(False)
+    axes[1].set_xticklabels(xlabels)
+    axes[1].set_xlabel('')
+    plt.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
+    plt.tight_layout(pad=2)
+    image_path = os.path.join(wd, 'analysis/r2-per-mask.png')
+    plt.savefig(image_path)
+    plt.clf()
+
+    # Evaluate r2 fitted per mask type
+    r2_masks = glob.glob(os.path.join(wd,  "analysis/predictions/r2_per_mask.npy"))[0]
+    r2_masks = np.load(r2_masks)
+
+    r_r2_masks = glob.glob(os.path.join(wd,  "analysis/predictions/r2_per_mask_r.npy"))[0]
+    r_r2_masks = np.load(r_r2_masks)
+
     MAE_mask_df = pd.DataFrame()
-    mask_MAEs = []
     mask_r2s = []
+    r_mask_r2s = []
     layer_nr = layers_oi * len(masks_ordered)
     mask_nr = []
 
@@ -618,24 +749,21 @@ def PLS_model(data, features, exp = True, thres = 0):
 
         mask_type = masks_ordered[j]
         mask_name = mask_type.split("_")[1]
-        mask_ids = np.array(GA_df_masks[GA_df_masks['Mask type']== mask_type].index)
 
-        for i in range(n_layers + 1):
+        for i in range(len(layers_oi)):
 
             layer = layers_oi[i]
+            mask_r2 = r2_masks[j, i]
+            r_mask_r2 = r_r2_masks[j, i]
 
-            mask_pred = preds[mask_ids, i]
-            y_mask = y[mask_ids]
-
-            r2 = (pearsonr(y_mask, mask_pred)[0])**2
-            error = MAE(y_mask, mask_pred)
-            mask_MAEs.append(error)
-            mask_r2s.append(r2)
+            mask_r2s.append(mask_r2)
+            r_mask_r2s.append(r_mask_r2)
 
             mask_nr.append(mask_name)
     
     MAE_mask_df['MAE'] = mask_MAEs
     MAE_mask_df['r2'] = mask_r2s
+    MAE_mask_df['r_r2'] = r_mask_r2s
     MAE_mask_df['Mask'] = mask_nr
     MAE_mask_df['Layer'] = layer_nr
 
@@ -643,35 +771,33 @@ def PLS_model(data, features, exp = True, thres = 0):
     file_path = os.path.join(wd, 'analysis/stats/')
     if not os.path.exists(file_path):
             os.makedirs(file_path)
-    MAE_mask_df.to_csv(os.path.join(file_path, 'MAE_per_mask.csv'), index=False)
 
-    # Plot MAE per mask per layer
-    fig, axes = plt.subplots(1, figsize=(5,4))
-    sns.pointplot(data=MAE_mask_df, x='Layer', y='MAE', hue='Mask')
+    MAE_mask_df.to_csv(os.path.join(file_path, 'r2_fitted_per_mask.csv'), index=False)
+
+    # Plot R2 per mask per layer
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4), sharey=True)
+    sns.pointplot(data=MAE_mask_df, x="Layer", y="r_r2", hue='Mask', ax=axes[0])
     sns.despine(offset=10)
-    # plt.ylim([0.07, 0.14])
     xlabels = ['layer 1', 'layer 2', 'layer 3', 'layer 4', 'layer 5', 'all']
-    plt.xticks(np.arange(len(xlabels)),xlabels)
-    plt.xlabel('')
-    plt.tight_layout()
-    image_path = os.path.join(wd, 'analysis/MAEs-per-mask.png')
+    axes[0].set_title('Random')
+    axes[0].set_xticklabels(xlabels)
+    axes[0].set_xlabel('')
+    axes[0].set_ylabel('$r^2$')
+    axes[0].set_ylim([0, 0.5])
+    axes[0].legend([],[], frameon=False)
+    sns.pointplot(data=MAE_mask_df, x="Layer", y="r2", hue='Mask', ax=axes[1], sharey=axes[0])
+    axes[1].set_title('Pretrained')
+    axes[1].axes.yaxis.set_visible(False)
+    axes[1].spines['left'].set_visible(False)
+    axes[1].set_xticklabels(xlabels)
+    axes[1].set_xlabel('')
+    plt.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
+    plt.tight_layout(pad=2)
+    image_path = os.path.join(wd, 'analysis/r2-fitted-per-mask.png')
     plt.savefig(image_path)
     plt.clf()
-
-    # Plot r2 per mask per layer
-    sns.pointplot(data=MAE_mask_df, x='Layer', y='r2', hue='Mask')
-    sns.despine(offset=10)
-    plt.ylim([0.0, 0.5])
-    xlabels = ['layer 1', 'layer 2', 'layer 3', 'layer 4', 'layer 5', 'all']
-    plt.xticks(np.arange(len(xlabels)),xlabels)
-    plt.xlabel('')
-    plt.tight_layout()
-    image_path = os.path.join(wd, 'analysis/r2-per-mask.png')
-    plt.savefig(image_path)
-    plt.clf()
-
-
-    # Prediction per image for best layer (= layer5)
+    
+    # Prediction per image for best layer (= layer4)
     tmp_df_1 = pd.DataFrame(preds[:, 4]).reset_index()
     tmp_df_2 = pd.DataFrame(y).reset_index()
 
@@ -694,23 +820,75 @@ def PLS_model(data, features, exp = True, thres = 0):
     plt.savefig(image_path)
     plt.clf()
 
-
     # Cor plot
-    fig, axes = plt.subplots(1, 6, sharex=True, sharey=True, dpi=100, figsize=(14,7))
-    for i in range(n_layers + 1):
-        layer = layers_oi[i]
+    fig, axes = plt.subplots(1, 3, sharex=True, sharey=True, dpi=100, figsize=(12,4))
+    c_layers = [0, 3, 3]
+    labels = ['Pretrained: layer 1', 'Pretrained: layer 4', 'Random: layer 4 ']
 
-        pred_df = pd.concat([pd.DataFrame(preds[:, i]), pd.DataFrame(y)], axis=1)
-        pred_df.columns = ['y_pred', 'y']
+    for i in range(len(c_layers)):
 
-        sns.regplot(x='y', y='y_pred', data=pred_df, color='red', ci=None, ax=axes[i], scatter_kws={'alpha':0.3})
-        axes[i].set_title(f"{layer}")
+        layer_nr = c_layers[i]
+
+        index = c_layers[i]
+        layer = layers_oi[index]
+        label = labels[i]
+
+        if i < 2:
+            pred_df = pd.concat([pd.DataFrame(preds[:, index]), pd.DataFrame(y)], axis=1)
+            pred_df.columns = ['y_pred', 'y']
+        else:
+            pred_df = pd.concat([pd.DataFrame(r_preds[:, index]), pd.DataFrame(y)], axis=1)
+            pred_df.columns = ['y_pred', 'y']
+
+        sns.regplot(x='y', y='y_pred', data=pred_df, color='salmon', ci=None, ax=axes[i], scatter_kws={'alpha':0.3})
+        axes[i].set_title(f"{label}")
+
+        # hight light examples
+        if index == 3:
+            resids = abs(pred_df['y_pred'] - pred_df['y'])
+            best_point = np.argmin(resids)
+            best_x = pred_df['y'].iloc[best_point]
+            best_y = pred_df['y_pred'].iloc[best_point]
+            axes[i].scatter(best_x, best_y, color = 'firebrick')
+
+            og_index = GA_df_masks.iloc[best_point]['index']
+            target = trial_file.iloc[og_index]['ImageID']
+            mask = trial_file.iloc[og_index]['mask_path']
+            print("BEST:")
+            print(f"t: {target}")
+            print(f"m: {mask}")
+            
+            # y_pred > y
+            worst_point = np.argmax(resids)
+            worst_x = pred_df['y'].iloc[worst_point]
+            worst_y = pred_df['y_pred'].iloc[worst_point]
+            axes[i].scatter(worst_x, worst_y, color = 'firebrick')
+
+            og_index = GA_df_masks.iloc[worst_point]['index']
+            target = trial_file.iloc[og_index]['ImageID']
+            mask = trial_file.iloc[og_index]['mask_path']
+            print("y_pred > y:")
+            print(f"t: {target}")
+            print(f"m: {mask}")
+
+            # y_pred < y
+            bad_point = np.argmax(pred_df['y'] - pred_df['y_pred'])
+            bad_x = pred_df['y'].iloc[bad_point]
+            bad_y = pred_df['y_pred'].iloc[bad_point]
+            axes[i].scatter(bad_x, bad_y, color = 'firebrick')
+
+            og_index = GA_df_masks.iloc[bad_point]['index']
+            target = trial_file.iloc[og_index]['ImageID']
+            mask = trial_file.iloc[og_index]['mask_path']
+            print("y_pred < y:")
+            print(f"t: {target}")
+            print(f"m: {mask}")
 
         sns.set_style({"xtick.direction": "in","ytick.direction": "in", "font_scale": 15})
         sns.despine()
 
         # Correlate 
-        n_ivs = X[layer].shape[1]
+        # n_ivs = X[layer].shape[1]
         r, p = pearsonr(pred_df['y'], pred_df['y_pred'])
         r2 = r**2
         # adj_r2 = 1 - (1-r2) *((n_mask_trials -1)/(n_mask_trials - n_ivs))
@@ -718,22 +896,92 @@ def PLS_model(data, features, exp = True, thres = 0):
         print(f'r = {r:.3f}\np = {p}\nr2 = {r**2:.3f}')
         # print(f'adj_r2 = {adj_r2:.3f}')
 
-        axes[i].set_xlabel(f'r^2 = {r**2:.3f}')
+        axes[i].set_xlabel(f'$r^2$ = {r**2:.3f}')
         axes[i].set_ylabel('')
-        axes[i].set_xticks([],size=35)
-        axes[i].set_yticks([], size=35)
+        axes[i].set_xticks([],size=20)
+        axes[i].set_yticks([], size=20)
 
     fig.supxlabel('Mask efficacy')
     fig.supylabel('Predicted mask efficacy')
     image_path = os.path.join(wd, 'analysis/predictions/corplot.png')
     plt.savefig(image_path)
 
-    
+    # Plot predictions pretrained versus random layer 4 
+    pred_df = pd.concat([pd.DataFrame(preds[:, 3]),pd.DataFrame(r_preds[:, 3]), pd.DataFrame(y)], axis=1)
+    pred_df.columns = ['y_pred', 'ry_pred',  'y']
 
-def model_per_mask():
-    shell()
     
+    fig, axes = plt.subplots(1, dpi=100, figsize=(5,4))
+    sns.regplot(x='y_pred', y='ry_pred', data=pred_df, color='salmon', scatter_kws={'alpha':0.3})
+    fig.suptitle('Model predictions')
+    plt.xlabel('Pretrained')
+    # plt.xticks(np.linspace(0,1,5,True),np.linspace(0,1,5,True))
+    # plt.yticks(np.linspace(0,1,5,True),np.linspace(0,1,5,True))
+    plt.ylabel('Random')
+    sns.despine(offset=10)
+    plt.tight_layout()
+    image_path = os.path.join(wd, 'analysis/predictions/pre_vs_random.png')
+    plt.savefig(image_path)
+
+    labels = ['natural', 'lines', 'blocked', 'geometric', 'scrambled']
+    # fig, axes = plt.subplots(1, len(masks_ordered), dpi=500, figsize=(15,4), sharex=True, sharey=True)
+    fig, axes = plt.subplots(1, len(masks_ordered), dpi=500, figsize=(15,4))
+    for i in range(len(masks_ordered)):
+        random.seed(0)
+        mask = masks_ordered[i]
+        select_df = GA_df_masks[GA_df_masks['Mask type'] == mask]
+        select_df_ids = np.array(select_df.index)
+        select_pred = pred_df.iloc[select_df_ids]
+        select_pred = pd.concat([select_pred, select_df], axis=1)
+
+        # Create sub selection
+        resids = select_pred['ry_pred'] - select_pred['y_pred']
+        Q1 = resids.quantile(0.25)
+        Q3 = resids.quantile(0.75)
+        low = np.random.choice(np.array(resids[resids < Q1].index), size=20, replace=False)
+        mid= np.random.choice(np.array(resids[(resids > Q1) & (resids < Q3)].index), size=20, replace=False)
+        high = np.random.choice(np.array(resids[resids > Q3].index), size=20, replace=False)
+        sample = np.concatenate([low, mid, high])
+        sampled_df = select_pred.loc[sample]
+        og_index = np.array(select_pred.loc[sample]['index'])
+        paths = trial_file.iloc[og_index]['ImageID'].tolist()
+
+        # plot images in regplot
+        from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+        x = sampled_df['ry_pred'].tolist()
+        y = sampled_df['y_pred'].tolist()
+        sns.scatterplot(x='ry_pred', y='y_pred', data=sampled_df, color='salmon', ax=axes[i])
+        sns.despine(offset=10)
+        for x0, y0, path in zip(x, y, paths):
+            n_path = os.path.join(wd, path[53:])
+            im = Image.open(n_path)
+            im = np.asarray(im)
+            ab = AnnotationBbox(OffsetImage(im, zoom=0.03), (x0, y0), frameon=False)
+            axes[i].add_artist(ab)
+
+        max = np.ceil(np.max([sampled_df['y_pred'], sampled_df['ry_pred']])*10)/10
+        min = np.floor(np.min([sampled_df['y_pred'], sampled_df['ry_pred']])*10)/10
+        axes[i].set_xticks(np.linspace(min, max, round((max - min)/0.1) + 1, True))
+        axes[i].set_yticks(np.linspace(min, max, round((max - min)/0.1) + 1, True))
+        axes[i].plot(axes[i].get_xlim(), axes[i].get_ylim(), ls="--", c=".3")
+        axes[i].set_title(labels[i])
+        axes[i].set_xlabel('')
+        axes[i].set_ylabel('')
+
+    fig.supxlabel('Random')
+    fig.supylabel('Pretrained')
+    fig.suptitle('Model efficacy predictions')
+    plt.tight_layout(pad=2)
+    image_path = os.path.join(wd, 'analysis/predictions/pre_vs_random.png')
+    plt.savefig(image_path)
+
+
+def model_per_mask(boot=0, exp=True):
+    shell()
+
     from sklearn.cross_decomposition import PLSRegression
+    # Set seed
+    random.seed(boot)
 
     # Load GA_df_masks
     file_path = os.path.join(wd,  'analysis/stats/GA_df_masks.csv')
@@ -742,7 +990,11 @@ def model_per_mask():
 
     # Load X 
     file_path = os.path.join(wd,  'analysis/stats/')
-    X = glob.glob(os.path.join(file_path, 'X'))[0]
+
+    if exp == True:
+        X = glob.glob(os.path.join(file_path, 'X'))[0]
+    else:
+        X = glob.glob(os.path.join(file_path, 'X_random'))[0]
     file = open(X, 'rb')
     X = pkl.load(file)
     file.close()
@@ -784,69 +1036,12 @@ def model_per_mask():
     if not os.path.exists(file_path):
             os.makedirs(file_path)
 
-    np.save(os.path.join(file_path, "PLS_per_mask.npy"), preds)
-
-    # Evaluate MAE per mask type
-    preds = glob.glob(os.path.join(file_path,  "MAE_per_mask_fitted.npy"))[0]
-    preds = np.load(preds)
-    MAE_mask_df = pd.DataFrame()
-    mask_MAEs = []
-    mask_r2s = []
-    layer_nr = layers_oi * len(masks_ordered)
-    mask_nr = []
-
-    for j in range(len(masks_ordered)):
-
-        mask_type = masks_ordered[j]
-        mask_name = mask_type.split("_")[1]
-
-        for i in range(len(layers_oi)):
-
-            layer = layers_oi[i]
-            mask_MAE = MAE_masks[j, i]
-            mask_r2 = r2_masks[j, i]
-            mask_MAEs.append(mask_MAE)
-            mask_r2s.append(mask_r2)
-            mask_nr.append(mask_name)
-    
-    MAE_mask_df['MAE'] = mask_MAEs
-    MAE_mask_df['r2'] = mask_r2s
-    MAE_mask_df['Mask'] = mask_nr
-    MAE_mask_df['Layer'] = layer_nr
-
-    # Save 
-    file_path = os.path.join(wd, 'analysis/stats/')
-    if not os.path.exists(file_path):
-            os.makedirs(file_path)
-    MAE_mask_df.to_csv(os.path.join(file_path, 'MAE_fitted_per_mask.csv'), index=False)
-
-    # Plot MAE per mask per layer
-    fig, axes = plt.subplots(1, figsize=(5,4))
-    sns.set_palette('tab10')
-    sns.set_style("white")
-    sns.pointplot(data=MAE_mask_df, x='Layer', y='MAE', hue='Mask')
-    sns.despine(offset=10)
-    xlabels = ['layer 1', 'layer 2', 'layer 3', 'layer 4', 'layer 5', 'all']
-    plt.xticks(np.arange(len(xlabels)),xlabels)
-    plt.xlabel('')
-    plt.tight_layout()
-    image_path = os.path.join(wd, 'analysis/MAEs-fitted-per-mask.png')
-    plt.savefig(image_path)
-    plt.clf()
-
-    # Plot R2 per mask per layer
-    sns.set_palette('tab10')
-    sns.set_style("white")
-    sns.pointplot(data=MAE_mask_df, x='Layer', y='r2', hue='Mask')
-    sns.despine(offset=10)
-    xlabels = ['layer 1', 'layer 2', 'layer 3', 'layer 4', 'layer 5', 'all']
-    plt.xticks(np.arange(len(xlabels)),xlabels)
-    plt.xlabel('')
-    # plt.ylim([-0.2, 0.5])
-    plt.tight_layout()
-    image_path = os.path.join(wd, 'analysis/r2-fitted-per-mask.png')
-    plt.savefig(image_path)
-    plt.clf()
+    if exp == True:
+        np.save(os.path.join(file_path, "PLS_per_mask.npy"), preds)
+        np.save(os.path.join(file_path, "r2_per_mask.npy"), r2_masks)
+    else:
+        np.save(os.path.join(file_path, "PLS_per_mask_r.npy"), preds)
+        np.save(os.path.join(file_path, "r2_per_mask_r.npy"), r2_masks)
 
 
 def calc_distance(features):
@@ -858,9 +1053,20 @@ def calc_distance(features):
     file = open(X1, 'rb')
     X1= pkl.load(file)
     file.close()
+
     X2 = glob.glob(os.path.join(file_path, 'X2'))[0]
     file = open(X2, 'rb')
     X2= pkl.load(file)
+    file.close()
+
+    X1_random = glob.glob(os.path.join(file_path, 'X1_random'))[0]
+    file = open(X1_random, 'rb')
+    X1_random= pkl.load(file)
+    file.close()
+
+    X2_random = glob.glob(os.path.join(file_path, 'X2'))[0]
+    file = open(X2_random, 'rb')
+    X2_random= pkl.load(file)
     file.close()
 
     # Load GA_df_masks
@@ -870,8 +1076,11 @@ def calc_distance(features):
 
     # Load predictions
     file_path = os.path.join(wd, 'analysis/predictions')
-    preds = glob.glob(os.path.join(file_path, 'lr_predictions.npy'))[0]
+    preds = glob.glob(os.path.join(file_path, 'PLS_predictions_*.npy'))[0]
     preds = np.load(preds)
+
+    r_preds = glob.glob(os.path.join(file_path, 'r_PLS_predictions_*.npy'))[0]
+    r_preds = np.load(r_preds)
 
     layers = ['layer1', 'layer2', 'layer3', 'layer4', 'layer5']
     n_mask_trials = X1['layer1'].shape[0]
@@ -883,8 +1092,16 @@ def calc_distance(features):
         'layer4': np.zeros((n_mask_trials)),
         'layer5': np.zeros((n_mask_trials)),
         }
-    
+        
     resids =  {
+        'layer1': np.zeros((n_mask_trials)),
+        'layer2': np.zeros((n_mask_trials)),
+        'layer3': np.zeros((n_mask_trials)),
+        'layer4': np.zeros((n_mask_trials)),
+        'layer5': np.zeros((n_mask_trials)),
+        }
+
+    r_resids =  {
         'layer1': np.zeros((n_mask_trials)),
         'layer2': np.zeros((n_mask_trials)),
         'layer3': np.zeros((n_mask_trials)),
@@ -898,8 +1115,10 @@ def calc_distance(features):
         for trial in range(n_mask_trials):
             cor = spearmanr(X1[layer][trial, :], X2[layer][trial, :])[0]
             cors[layer][trial] = cor
-            resid = abs(y[trial] - preds[trial, i])
+            resid = y[trial] - preds[trial, i]
             resids[layer][trial] = resid
+            r_resid = abs(y[trial] - r_preds[trial, i])
+            r_resids[layer][trial] = r_resid
     
     file_path = os.path.join(wd, 'analysis/stats/cors')
     file = open(file_path, 'wb')
@@ -907,63 +1126,105 @@ def calc_distance(features):
     file.close()
 
     # Performance accuracy / similarity plot
-    fig, axes = plt.subplots(1, 5,dpi=100, figsize=(14,7))
+    fig, axes = plt.subplots(1, 5,dpi=100, figsize=(15,4))
+    sns.set_style('white')
+    sns.set_style('ticks')
+    labels = ['layer 1', 'layer 2', 'layer 3', 'layer 4', 'layer 5']
     for i in range(len(layers)):
         layer = layers[i]
+        label = labels[i]
 
         reg_df = pd.concat([pd.DataFrame(cors[layer]), pd.DataFrame(y)], axis=1)
-        reg_df.columns = ['Similarity', 'Residuals']
+        reg_df.columns = ['Similarity', 'Efficacy']
 
-        sns.regplot(x='Similarity', y='Residuals', data=reg_df, color='blue', ci=None, ax=axes[i], scatter_kws={'alpha':0.3})
-        axes[i].set_title(f"{layer}")
+        sns.regplot(x='Similarity', y='Efficacy', data=reg_df, color='blue', ci=None, ax=axes[i], scatter_kws={'alpha':0.3})
+        axes[i].set_title(f"{label}")
 
         sns.set_style({"xtick.direction": "in","ytick.direction": "in", "font_scale": 15})
-        sns.despine()
+        sns.despine(offset=10)
 
         # Correlate 
-        r, p = pearsonr(reg_df['Residuals'], reg_df['Similarity'])
+        r, p = pearsonr(reg_df['Efficacy'], reg_df['Similarity'])
         print(f"{layer}")
         print(f'r = {r:.3f}\np = {p}\nr2 = {r**2:.3f}')
 
-        axes[i].set_xlabel(f'r = {r:.3f}, p = {p:.3f}')
+        axes[i].set_xlabel(f'r = {r:.3f}, $p = {p:.3f}$')
         axes[i].set_ylabel('')
         # axes[i].set_xticks([],size=35)
         # axes[i].set_yticks([], size=35)
 
     fig.supxlabel('Feature similarity')
     fig.supylabel('Efficacy')
+    plt.tight_layout(pad=2)
     image_path = os.path.join(wd, 'analysis/predictions/ef_similarity_corplot.png')
+    plt.savefig(image_path)
+    plt.clf()
+
+    # Model predictions / similarity plot
+    fig, axes = plt.subplots(1, 5,dpi=100, figsize=(15,4))
+    sns.set_style('white')
+    sns.set_style('ticks')
+    labels = ['layer 1', 'layer 2', 'layer 3', 'layer 4', 'layer 5']
+    for i in range(len(layers)):
+        layer = layers[i]
+        label = labels[i]
+
+        reg_df = pd.concat([pd.DataFrame(cors[layer]), pd.DataFrame(preds[:, i])], axis=1)
+        reg_df.columns = ['Similarity', 'Predicted efficacy']
+
+        sns.regplot(x='Similarity', y='Predicted efficacy', data=reg_df, color='blue', ci=None, ax=axes[i], scatter_kws={'alpha':0.3})
+        axes[i].set_title(f"{label}")
+
+        sns.set_style({"xtick.direction": "in","ytick.direction": "in", "font_scale": 15})
+        sns.despine(offset=10)
+
+        # Correlate 
+        r, p = pearsonr(reg_df['Predicted efficacy'], reg_df['Similarity'])
+        print(f"{layer}")
+        print(f'r = {r:.3f}\np = {p}\nr2 = {r**2:.3f}')
+
+        axes[i].set_xlabel(f'r = {r:.3f}, $p = {p:.3f}$')
+        axes[i].set_ylabel('')
+        # axes[i].set_xticks([],size=35)
+        # axes[i].set_yticks([], size=35)
+
+    fig.supxlabel('Feature similarity')
+    fig.supylabel('Predicted efficacy')
+    plt.tight_layout(pad=2)
+    image_path = os.path.join(wd, 'analysis/predictions/pred_similarity_corplot.png')
     plt.savefig(image_path)
     plt.clf()
 
 
     # Resid /  similarity plot
-    fig, axes = plt.subplots(1, 5, dpi=100, figsize=(14,7))
+    fig, axes = plt.subplots(1, 5, dpi=100, figsize=(15,4), sharey=True)
     for i in range(len(layers)):
         layer = layers[i]
+        label = labels[i]
 
         reg_df = pd.concat([pd.DataFrame(cors[layer]), pd.DataFrame(resids[layer])], axis=1)
         reg_df.columns = ['Similarity', 'Residuals']
 
         sns.regplot(x='Similarity', y='Residuals', data=reg_df, color='blue', ci=None, ax=axes[i], scatter_kws={'alpha':0.3})
-        axes[i].set_title(f"{layer}")
+        axes[i].set_title(f"{label}")
 
         sns.set_style({"xtick.direction": "in","ytick.direction": "in", "font_scale": 15})
-        sns.despine()
+        sns.despine(offset=10)
 
         # Correlate 
         r, p = pearsonr(reg_df['Residuals'], reg_df['Similarity'])
         print(f"{layer}")
         print(f'r = {r:.3f}\np = {p}\nr2 = {r**2:.3f}')
 
-        axes[i].set_xlabel(f'r = {r:.3f}, p = {p:.3f}')
+        axes[i].set_xlabel(f'r = {r:.3f}, $p = {p:.3f}$')
         axes[i].set_ylabel('')
         # axes[i].set_xticks([],size=35)
         # axes[i].set_yticks([], size=35)
 
     fig.supxlabel('Feature similarity')
-    fig.supylabel('Absolute model residuals')
-    image_path = os.path.join(wd, 'analysis/predictions/mod_similarity_corplot.png')
+    fig.supylabel('Residuals')
+    plt.tight_layout(pad=2)
+    image_path = os.path.join(wd, 'analysis/predictions/resid_similarity_corplot.png')
     plt.savefig(image_path)
     plt.clf()
 
@@ -984,14 +1245,25 @@ random_features = load_features(atype='random')
 # Preprocess behavioural data
 bdata = preprocess_bdata()
 
-# Set up random model
-# PLS_model(bdata, random_features, exp=False, thres=0)
+# Pre random model
+# pre_model(bdata, random_features, exp=False, thres=0)
 
-# Set up log regression model
-# PLS_model(bdata, exp_features, exp=True, thres=0)
+# Pre trained model
+# pre_model(bdata, exp_features, exp=True, thres=0)
 
-# Model per mask
-model_per_mask()
+# Set up random model - bootstrap
+# boots = 2 #30?
+# for boot in range(boots):
+#     print(f"boot: {boot}")
+#     # PLS_model(boot, exp=True)
+#     # model_per_mask(boot) #also boot
+#     PLS_model(boot, exp=False) # random / trained
 
-# Calc feature distancese
+# model_per_mask(boot = 0, exp=False)
+# model_per_mask(boot = 0, exp=True)
+
+# Create model plots
+model_plots()
+
+# Distance analysis
 # calc_distance(exp_features)
