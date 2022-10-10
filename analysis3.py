@@ -575,9 +575,14 @@ def model_plots():
     no_mask = [i for i in range(len(trial_file)) if trial_file.iloc[i]['mask_type']=='no_mask']
     n_mask_trials = n_trials - len(no_mask)
 
+    complexities = glob.glob(os.path.join(wd,  "analysis/stats/CF_complexity.npy"))[0]
+    complexities = np.load(complexities)
+    all_complexities = np.repeat(complexities, 5)
+
     # Load GA_df_masks
     file_path = os.path.join(wd,  'analysis/stats/GA_df_masks.csv')
     GA_df_masks = pd.read_csv(file_path)
+    GA_df_masks['Complexity'] = all_complexities
     y = np.asarray(GA_df_masks['Efficacy'])
 
     big_df = pd.DataFrame()
@@ -667,6 +672,8 @@ def model_plots():
         layer_nr = layers_oi * len(masks_ordered)
         mask_nr = []
 
+        r2_differences = []
+
         for j in range(len(masks_ordered)):
 
             mask_type = masks_ordered[j]
@@ -682,23 +689,27 @@ def model_plots():
                 y_mask = y[mask_ids]
 
                 r2 = (pearsonr(y_mask, mask_pred)[0])**2
-                relative_r2 = r2 - big_df.loc[i]['r2'] 
+                relative_r2 = r2
+                # relative_r2 = r2 - big_df.loc[i]['r2'] 
                 error = MAE(y_mask, mask_pred)
                 mask_MAEs.append(error)
                 mask_r2s.append(relative_r2)
 
                 r_r2 = (pearsonr(y_mask, r_mask_pred)[0])**2
                 r_error = MAE(y_mask, r_mask_pred)
-                relative_r_r2 = r_r2 - r_big_df.loc[i]['r2'] 
+                relative_r_r2 = r_r2
+                # relative_r_r2 = r_r2 - r_big_df.loc[i]['r2'] 
                 r_mask_MAEs.append(r_error)
                 r_mask_r2s.append(relative_r_r2)
 
+                r2_differences.append(r2 - r_r2)
                 mask_nr.append(mask_name)
         
         MAE_mask_df['MAE'] = mask_MAEs
         MAE_mask_df['r2'] = mask_r2s
         MAE_mask_df['r_MAE'] = r_mask_MAEs
         MAE_mask_df['r_r2'] = r_mask_r2s
+        MAE_mask_df['r2_difference'] = r2_differences
         MAE_mask_df['Mask'] = mask_nr
         MAE_mask_df['Layer'] = layer_nr
         MAE_mask_df['boot'] = [k]*len(layer_nr)
@@ -719,7 +730,8 @@ def model_plots():
     axes[0].set_title('Random')
     axes[0].set_xticklabels(xlabels)
     axes[0].set_xlabel('')
-    axes[0].set_ylabel('Deviance from overall $r^2$')
+    axes[0].set_ylabel('$r^2$')
+    # axes[0].set_ylabel('Deviance from overall $r^2$')
     # axes[0].set_ylim([0, 0.5])
     axes[0].legend([],[], frameon=False)
     sns.pointplot(data=big_mask_df, x="Layer", y="r2", hue='Mask', ax=axes[1], sharey=axes[0])
@@ -734,6 +746,24 @@ def model_plots():
     plt.savefig(image_path)
     plt.clf()
 
+    # R2 difference (pre-random) plot
+    fig, axes = plt.subplots(1, figsize=(6, 4))
+    sns.pointplot(data=big_mask_df, x="Layer", y="r2_difference", hue='Mask')
+    sns.despine(offset=10)
+    xlabels = ['layer 1', 'layer 2', 'layer 3', 'layer 4', 'layer 5', 'all']
+    plt.title('Pretrained - Random')
+    plt.xticks(np.arange(len(xlabels)),xlabels)
+    plt.xlabel('')
+    plt.ylabel('$r^2$')
+    # axes[0].set_ylabel('Deviance from overall $r^2$')
+    # axes[0].set_ylim([0, 0.5])
+    plt.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
+    plt.tight_layout(pad=2)
+    image_path = os.path.join(wd, 'analysis/r2-difference-per-mask.png')
+    plt.savefig(image_path)
+    plt.clf()
+
+
     # Evaluate r2 fitted per mask type
     r2_masks = glob.glob(os.path.join(wd,  "analysis/predictions/r2_per_mask.npy"))[0]
     r2_masks = np.load(r2_masks)
@@ -745,6 +775,8 @@ def model_plots():
     mask_r2s = []
     r_mask_r2s = []
     layer_nr = layers_oi * len(masks_ordered)
+    complexity = []
+    difference_r2s = []
     mask_nr = []
 
     for j in range(len(masks_ordered)):
@@ -757,15 +789,18 @@ def model_plots():
             layer = layers_oi[i]
             mask_r2 = r2_masks[j, i]
             r_mask_r2 = r_r2_masks[j, i]
+            difference_r2s.append(mask_r2 - r_mask_r2)
 
             mask_r2s.append(mask_r2)
             r_mask_r2s.append(r_mask_r2)
 
             mask_nr.append(mask_name)
+            c
     
     MAE_mask_df['MAE'] = mask_MAEs
     MAE_mask_df['r2'] = mask_r2s
     MAE_mask_df['r_r2'] = r_mask_r2s
+    MAE_mask_df['r2_difference'] = difference_r2s
     MAE_mask_df['Mask'] = mask_nr
     MAE_mask_df['Layer'] = layer_nr
 
@@ -796,6 +831,23 @@ def model_plots():
     plt.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
     plt.tight_layout(pad=2)
     image_path = os.path.join(wd, 'analysis/r2-fitted-per-mask.png')
+    plt.savefig(image_path)
+    plt.clf()
+
+    # R2 difference (pre-random) plot
+    fig, axes = plt.subplots(1, figsize=(6, 4))
+    sns.pointplot(data=MAE_mask_df, x="Layer", y="r2_difference", hue='Mask')
+    sns.despine(offset=10)
+    xlabels = ['layer 1', 'layer 2', 'layer 3', 'layer 4', 'layer 5', 'all']
+    plt.title('Pretrained - Random')
+    plt.xticks(np.arange(len(xlabels)),xlabels)
+    plt.xlabel('')
+    plt.ylabel('$r^2$')
+    # axes[0].set_ylabel('Deviance from overall $r^2$')
+    # axes[0].set_ylim([0, 0.5])
+    plt.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
+    plt.tight_layout(pad=2)
+    image_path = os.path.join(wd, 'analysis/r2-difference-fitted-per-mask.png')
     plt.savefig(image_path)
     plt.clf()
     
@@ -911,58 +963,52 @@ def model_plots():
     # Plot predictions pretrained versus random layer 4 
     pred_df = pd.concat([pd.DataFrame(preds[:, 3]),pd.DataFrame(r_preds[:, 3]), pd.DataFrame(y)], axis=1)
     pred_df.columns = ['y_pred', 'ry_pred',  'y']
+    pred_df = pd.concat([GA_df_masks, pred_df], axis=1)
 
+    random.seed(1)
+    im_select = np.random.choice(pd.unique(trial_file['ImageID']), size=60, replace = False)
+    n_paths = []
+    path_ids = []
+
+    for i in range(len(im_select)):
+        path = im_select[i]
+        path_ids.append(np.array(trial_file[trial_file['ImageID'] == path].index))
+        n_paths.append(os.path.join(wd, path[53:]))
     
-    fig, axes = plt.subplots(1, dpi=100, figsize=(5,4))
-    sns.regplot(x='y_pred', y='ry_pred', data=pred_df, color='salmon', scatter_kws={'alpha':0.3})
-    fig.suptitle('Model predictions')
-    plt.xlabel('Pretrained')
-    # plt.xticks(np.linspace(0,1,5,True),np.linspace(0,1,5,True))
-    # plt.yticks(np.linspace(0,1,5,True),np.linspace(0,1,5,True))
-    plt.ylabel('Random')
-    sns.despine(offset=10)
-    plt.tight_layout()
-    image_path = os.path.join(wd, 'analysis/predictions/pre_vs_random.png')
-    plt.savefig(image_path)
-
     labels = ['natural', 'lines', 'blocked', 'geometric', 'scrambled']
     # fig, axes = plt.subplots(1, len(masks_ordered), dpi=500, figsize=(15,4), sharex=True, sharey=True)
     fig, axes = plt.subplots(1, len(masks_ordered), dpi=500, figsize=(15,4))
     for i in range(len(masks_ordered)):
         random.seed(0)
         mask = masks_ordered[i]
-        select_df = GA_df_masks[GA_df_masks['Mask type'] == mask]
-        select_df_ids = np.array(select_df.index)
-        select_pred = pred_df.iloc[select_df_ids]
-        select_pred = pd.concat([select_pred, select_df], axis=1)
-
-        # Create sub selection
-        resids = select_pred['ry_pred'] - select_pred['y_pred']
-        Q1 = resids.quantile(0.25)
-        Q3 = resids.quantile(0.75)
-        low = np.random.choice(np.array(resids[resids < Q1].index), size=20, replace=False)
-        mid= np.random.choice(np.array(resids[(resids > Q1) & (resids < Q3)].index), size=20, replace=False)
-        high = np.random.choice(np.array(resids[resids > Q3].index), size=20, replace=False)
-        sample = np.concatenate([low, mid, high])
-        sampled_df = select_pred.loc[sample]
-        og_index = np.array(select_pred.loc[sample]['index'])
-        paths = trial_file.iloc[og_index]['ImageID'].tolist()
+        
+        coordinates_df = pd.DataFrame()
+        x = []
+        y = [] 
+        sc_complexities = []
+        for j in range(len(path_ids)):
+            path_id = path_ids[j][i]       
+            select_pred = pred_df[pred_df['index']==path_id]
+            x.append(select_pred['ry_pred'].values[0])
+            y.append(select_pred['y_pred'].values[0])
+            sc_complexities.append(select_pred['Complexity'].values[0])
+        
+        coordinates_df['ry_pred'] = x
+        coordinates_df['y_pred'] = y
+        coordinates_df['complexity'] = sc_complexities
 
         # plot images in regplot
         from matplotlib.offsetbox import OffsetImage, AnnotationBbox
-        x = sampled_df['ry_pred'].tolist()
-        y = sampled_df['y_pred'].tolist()
-        sns.scatterplot(x='ry_pred', y='y_pred', data=sampled_df, color='salmon', ax=axes[i])
+        sns.scatterplot(x='ry_pred', y='y_pred', data=coordinates_df, color='salmon', ax=axes[i])
         sns.despine(offset=10)
-        for x0, y0, path in zip(x, y, paths):
-            n_path = os.path.join(wd, path[53:])
-            im = Image.open(n_path)
+        for x0, y0, path in zip(x, y, n_paths):
+            im = Image.open(path)
             im = np.asarray(im)
             ab = AnnotationBbox(OffsetImage(im, zoom=0.03), (x0, y0), frameon=False)
             axes[i].add_artist(ab)
 
-        max = np.ceil(np.max([sampled_df['y_pred'], sampled_df['ry_pred']])*10)/10
-        min = np.floor(np.min([sampled_df['y_pred'], sampled_df['ry_pred']])*10)/10
+        max = np.ceil(np.max([coordinates_df['y_pred'], coordinates_df['ry_pred']])*10)/10
+        min = np.floor(np.min([coordinates_df['y_pred'], coordinates_df['ry_pred']])*10)/10
         axes[i].set_xticks(np.linspace(min, max, round((max - min)/0.1) + 1, True))
         axes[i].set_yticks(np.linspace(min, max, round((max - min)/0.1) + 1, True))
         axes[i].plot(axes[i].get_xlim(), axes[i].get_ylim(), ls="--", c=".3")
@@ -976,6 +1022,84 @@ def model_plots():
     plt.tight_layout(pad=2)
     image_path = os.path.join(wd, 'analysis/predictions/pre_vs_random.png')
     plt.savefig(image_path)
+
+    labels = ['natural', 'lines', 'blocked', 'geometric', 'scrambled']
+    # fig, axes = plt.subplots(1, len(masks_ordered), dpi=500, figsize=(15,4), sharex=True, sharey=True)
+    fig, axes = plt.subplots(1, len(masks_ordered), dpi=500, figsize=(15,4))
+    for i in range(len(masks_ordered)):
+        mask = masks_ordered[i]
+        
+        coordinates_df = pd.DataFrame()
+        x = []
+        y = [] 
+        for j in range(len(path_ids)):
+            path_id = path_ids[j][i]       
+            select_pred = pred_df[pred_df['index']==path_id]
+            x.append(select_pred['y_pred'].values[0])
+            y.append(select_pred['Efficacy'].values[0])
+        
+        coordinates_df['y_pred'] = x
+        coordinates_df['efficacy'] = y
+
+        # plot images in regplot
+        from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+        sns.scatterplot(x='y_pred', y='efficacy', data=coordinates_df, color='salmon', ax=axes[i])
+        sns.despine(offset=10)
+        for x0, y0, path in zip(x, y, n_paths):
+            im = Image.open(path)
+            im = np.asarray(im)
+            ab = AnnotationBbox(OffsetImage(im, zoom=0.03), (x0, y0), frameon=False)
+            axes[i].add_artist(ab)
+
+        max = np.ceil(np.max([coordinates_df['y_pred'], coordinates_df['efficacy']])*10)/10
+        min = np.floor(np.min([coordinates_df['y_pred'], coordinates_df['efficacy']])*10)/10
+        axes[i].set_xticks(np.linspace(min, max, round((max - min)/0.1) + 1, True))
+        axes[i].set_yticks(np.linspace(min, max, round((max - min)/0.1) + 1, True))
+        axes[i].plot(axes[i].get_xlim(), axes[i].get_ylim(), ls="--", c=".3")
+        axes[i].set_title(labels[i])
+        axes[i].set_xlabel('')
+        axes[i].set_ylabel('')
+
+    fig.supxlabel('Predicted efficacy')
+    fig.supylabel('Efficay')
+    fig.suptitle('Model predictions')
+    plt.tight_layout(pad=2)
+    image_path = os.path.join(wd, 'analysis/predictions/pred-versus-eff.png')
+    plt.savefig(image_path)
+
+
+def calc_complexity():
+    import sys
+
+    im_paths = pd.unique(trial_file['ImageID'])
+    cfs = []
+    for i in range(len(im_paths)):
+        print(f'image {i}')
+        path = im_paths[i]
+        n_path = os.path.join(wd, path[53:])
+
+        # compress image
+        im = Image.open(n_path)
+        im25_path = n_path.split('.')[0] + '_C.jpg'
+        im.save(im25_path,"JPEG", quality=25)
+
+        # Calculate compression factor
+        original_size = os.path.getsize(n_path)
+        encoded_size = os.path.getsize(im25_path)
+        compression_factor = (original_size) / (encoded_size)
+        cfs.append(compression_factor)
+
+        # remove compress
+        os.remove(im25_path)
+    
+    cfs = np.asarray(cfs)
+    file_path = os.path.join(wd, 'analysis/stats/')
+    if not os.path.exists(file_path):
+            os.makedirs(file_path)
+
+    np.save(os.path.join(file_path, "CF_complexity.npy"), cfs)
+
+
 
 
 def model_per_mask(boot=0, exp=True):
