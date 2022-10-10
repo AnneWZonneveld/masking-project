@@ -682,14 +682,16 @@ def model_plots():
                 y_mask = y[mask_ids]
 
                 r2 = (pearsonr(y_mask, mask_pred)[0])**2
+                relative_r2 = r2 - big_df.loc[i]['r2'] 
                 error = MAE(y_mask, mask_pred)
                 mask_MAEs.append(error)
-                mask_r2s.append(r2)
+                mask_r2s.append(relative_r2)
 
                 r_r2 = (pearsonr(y_mask, r_mask_pred)[0])**2
                 r_error = MAE(y_mask, r_mask_pred)
+                relative_r_r2 = r_r2 - r_big_df.loc[i]['r2'] 
                 r_mask_MAEs.append(r_error)
-                r_mask_r2s.append(r_r2)
+                r_mask_r2s.append(relative_r_r2)
 
                 mask_nr.append(mask_name)
         
@@ -717,8 +719,8 @@ def model_plots():
     axes[0].set_title('Random')
     axes[0].set_xticklabels(xlabels)
     axes[0].set_xlabel('')
-    axes[0].set_ylabel('$r^2$')
-    axes[0].set_ylim([0, 0.5])
+    axes[0].set_ylabel('Deviance from overall $r^2$')
+    # axes[0].set_ylim([0, 0.5])
     axes[0].legend([],[], frameon=False)
     sns.pointplot(data=big_mask_df, x="Layer", y="r2", hue='Mask', ax=axes[1], sharey=axes[0])
     axes[1].set_title('Pretrained')
