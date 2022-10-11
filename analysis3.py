@@ -775,7 +775,6 @@ def model_plots():
     mask_r2s = []
     r_mask_r2s = []
     layer_nr = layers_oi * len(masks_ordered)
-    complexity = []
     difference_r2s = []
     mask_nr = []
 
@@ -795,7 +794,6 @@ def model_plots():
             r_mask_r2s.append(r_mask_r2)
 
             mask_nr.append(mask_name)
-            c
     
     MAE_mask_df['MAE'] = mask_MAEs
     MAE_mask_df['r2'] = mask_r2s
@@ -975,6 +973,55 @@ def model_plots():
         path_ids.append(np.array(trial_file[trial_file['ImageID'] == path].index))
         n_paths.append(os.path.join(wd, path[53:]))
     
+    # Image plot 
+    labels = ['natural', 'lines', 'blocked', 'geometric', 'scrambled']
+    fig, axes = plt.subplots(1, len(masks_ordered), dpi=500, figsize=(15,4), sharex=True, sharey=True)
+    for i in range(len(masks_ordered)):
+        random.seed(0)
+        mask = masks_ordered[i]
+        
+        coordinates_df = pd.DataFrame()
+        x = []
+        y = [] 
+        sc_complexities = []
+        for j in range(len(path_ids)):
+            path_id = path_ids[j][i]       
+            select_pred = pred_df[pred_df['index']==path_id]
+            x.append(select_pred['ry_pred'].values[0])
+            y.append(select_pred['y_pred'].values[0])
+            sc_complexities.append(select_pred['Complexity'].values[0])
+        
+        coordinates_df['ry_pred'] = x
+        coordinates_df['y_pred'] = y
+        coordinates_df['complexity'] = sc_complexities
+
+        # plot images in regplot
+        from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+        sns.scatterplot(x='ry_pred', y='y_pred', data=coordinates_df, hue='complexity', ax=axes[i])
+        sns.despine(offset=10)
+        for x0, y0, path in zip(x, y, n_paths):
+            im = Image.open(path)
+            im = np.asarray(im)
+            ab = AnnotationBbox(OffsetImage(im, zoom=0.03), (x0, y0), frameon=False)
+            axes[i].add_artist(ab)
+
+        max = np.ceil(np.max([coordinates_df['y_pred'], coordinates_df['ry_pred']])*10)/10
+        min = np.floor(np.min([coordinates_df['y_pred'], coordinates_df['ry_pred']])*10)/10
+        axes[i].set_xticks(np.linspace(min, max, round((max - min)/0.1) + 1, True))
+        axes[i].set_yticks(np.linspace(min, max, round((max - min)/0.1) + 1, True))
+        axes[i].plot(axes[i].get_xlim(), axes[i].get_ylim(), ls="--", c=".3")
+        axes[i].set_title(labels[i])
+        axes[i].set_xlabel('')
+        axes[i].set_ylabel('')
+
+    fig.supxlabel('Random')
+    fig.supylabel('Pretrained')
+    fig.suptitle('Model efficacy predictions')
+    plt.tight_layout(pad=2)
+    image_path = os.path.join(wd, 'analysis/predictions/pre_vs_random.png')
+    plt.savefig(image_path)
+
+    # Complexity plot
     labels = ['natural', 'lines', 'blocked', 'geometric', 'scrambled']
     # fig, axes = plt.subplots(1, len(masks_ordered), dpi=500, figsize=(15,4), sharex=True, sharey=True)
     fig, axes = plt.subplots(1, len(masks_ordered), dpi=500, figsize=(15,4))
@@ -999,13 +1046,13 @@ def model_plots():
 
         # plot images in regplot
         from matplotlib.offsetbox import OffsetImage, AnnotationBbox
-        sns.scatterplot(x='ry_pred', y='y_pred', data=coordinates_df, color='salmon', ax=axes[i])
+        sns.scatterplot(x='ry_pred', y='y_pred', data=coordinates_df, hue='complexity', ax=axes[i])
         sns.despine(offset=10)
-        for x0, y0, path in zip(x, y, n_paths):
-            im = Image.open(path)
-            im = np.asarray(im)
-            ab = AnnotationBbox(OffsetImage(im, zoom=0.03), (x0, y0), frameon=False)
-            axes[i].add_artist(ab)
+        # for x0, y0, path in zip(x, y, n_paths):
+        #     im = Image.open(path)
+        #     im = np.asarray(im)
+        #     ab = AnnotationBbox(OffsetImage(im, zoom=0.03), (x0, y0), frameon=False)
+        #     axes[i].add_artist(ab)
 
         max = np.ceil(np.max([coordinates_df['y_pred'], coordinates_df['ry_pred']])*10)/10
         min = np.floor(np.min([coordinates_df['y_pred'], coordinates_df['ry_pred']])*10)/10
@@ -1020,8 +1067,9 @@ def model_plots():
     fig.supylabel('Pretrained')
     fig.suptitle('Model efficacy predictions')
     plt.tight_layout(pad=2)
-    image_path = os.path.join(wd, 'analysis/predictions/pre_vs_random.png')
+    image_path = os.path.join(wd, 'analysis/predictions/pre_vs_random_complex.png')
     plt.savefig(image_path)
+    plt.clf()
 
     labels = ['natural', 'lines', 'blocked', 'geometric', 'scrambled']
     # fig, axes = plt.subplots(1, len(masks_ordered), dpi=500, figsize=(15,4), sharex=True, sharey=True)
