@@ -380,6 +380,8 @@ def pre_model(data, features, exp = True, thres = 0):
         pkl.dump(X2, file)
         file.close()
     
+    shell()
+
     # Mask / no mask mean accuracy 
     type_means = trial_df.groupby(['mask_type'])['correct'].mean()
     
@@ -387,15 +389,21 @@ def pre_model(data, features, exp = True, thres = 0):
     mask_types = trial_file['mask_type']
     GA_df = pd.concat([trial_means, mask_types], ignore_index=True, axis=1)
     GA_df = GA_df.rename(columns={0: "Accuracy", 1: "Mask type"})
+    file_name = os.path.join(wd, 'analysis/stats/GA_df.csv')
+    GA_df.to_csv(file_name)
 
     # Plot accuracies
-    fig, axes = plt.subplots(1, figsize=(9, 5))
+    sns.set_context('paper', rc={'font.size': 16, 'xtick.labelsize': 14, 'ytick.labelsize': 14,
+                             'figure.titleweight': 'bold', 'axes.labelsize': 16, 'axes.titlesize': 10, 'legend.fontsize': 14})
+    palette_cb = sns.color_palette("colorblind", 10)
+    alt_palette = sns.color_palette([palette_cb[7], palette_cb[0], palette_cb[1], palette_cb[2], palette_cb[3], palette_cb[4]])
+
+    fig, axes = plt.subplots(1, figsize=(9, 5), dpi=500)
     masks_ordered = ['no_mask', '1_natural', '6_blocked', '2_scrambled', '5_lines', '4_geometric']
     GA_df["Mask type"] = pd.Categorical(GA_df["Mask type"], masks_ordered)
-    sns.set_palette('colorblind')
+    sns.set_style('white')
     sns.set_style('ticks')
-    # g = sns.stripplot(data=GA_df, x="Mask type", y="Accuracy", clip_on=False, alpha=0.5, jitter=0.3)
-    g = sns.swarmplot(data=GA_df, x="Mask type", y="Accuracy", clip_on=False, alpha=0.5)
+    g = sns.swarmplot(data=GA_df, x="Mask type", y="Accuracy", clip_on=False, alpha=0.5, palette=alt_palette)
     g.set_ylim([-0.1, 1])
     sns.despine(offset=10)
     plt.tight_layout()
@@ -481,9 +489,31 @@ def pre_model(data, features, exp = True, thres = 0):
             os.makedirs(file_path)
     GA_df_masks.to_csv(os.path.join(file_path, 'GA_df_masks.csv'), index=False)
 
+    # Asses outliers (efficaccy <=0 )
+    outliers = GA_df_masks[GA_df_masks['Efficacy'] <= 0]
+    outliers_ids = np.array(outliers['index'])
+    targets = trial_file.iloc[outliers_ids]['ImageID']
+    outliers = pd.concat([outliers.reset_index(), targets.reset_index()], axis=1)
+    pd.unique(targets)
+
+    # Asses outliers (efficaccy > 0.6)
+    maxliers = GA_df_masks[GA_df_masks['Efficacy'] > 0.65]
+    maxliers_ids = np.array(maxliers['index'])
+    targets = trial_file.iloc[maxliers_ids]['ImageID']
+    maxliers = pd.concat([maxliers.reset_index(), targets.reset_index()], axis=1)
+    pd.unique(targets)
+    maxliers[maxliers['Mask type']=='5_lines']['ImageID'] 
+    maxliers[maxliers['Mask type']=='6_blocked']['ImageID'] 
+    maxliers[maxliers['Mask type']=='1_natural']['ImageID'] 
+
+    shell()
     # Plot mask efficacies
+    # palette_cb = sns.color_palette("colorblind", 6)
+    # palette = sns.color_palette([palette_cb[1], palette_cb[2], palette_cb[3], palette_cb[4], palette_cb[5]])
+    # sns.set_palette(palette)
     masks_ordered = ['1_natural', '6_blocked', '2_scrambled', '5_lines', '4_geometric']
     GA_df_masks["Mask type"] = pd.Categorical(GA_df_masks["Mask type"], masks_ordered)
+    fig, axes = plt.subplots(1, figsize=(9, 5), dpi=500)
     g = sns.swarmplot(data=GA_df_masks, x="Mask type", y="Efficacy", clip_on=False, alpha=0.5)
     sns.set_palette('colorblind')
     sns.set_style('ticks')
@@ -504,11 +534,57 @@ def pre_model(data, features, exp = True, thres = 0):
             showcaps=False)
 
     g.set_xticklabels(['natural', 'blocked', 'scrambled', 'lines', 'geometric'])
-    g.set_ylim([-0.1, 1])
+    g.set_ylim([-0.1, 0.8])
     plt.axhline(y=0.0, color='gray', linestyle='--', clip_on = False)
     image_path = os.path.join(wd, 'analysis/Efficacy-per-mask.png')
     plt.savefig(image_path)
     plt.clf()
+
+    # Means + SD
+    GA_df_masks.groupby(['Mask type'])['Efficacy'].mean()
+    GA_df_masks.groupby(['Mask type'])['Efficacy'].std()
+
+
+    #  -------------------- ANOVA
+    # Test normality --> all not normally distributed
+    shapiro_res = []
+    for i in range(len(masks_ordered)):
+        mask_type = masks_ordered[i]
+        print(f"{mask_type}")
+        tmp = GA_df_masks[GA_df_masks['Mask type']==mask_type]
+        shapiro = stats.shapiro(tmp['Efficacy'])
+        shapiro_res.append(shapiro)
+        print(shapiro)
+    df = len(tmp) - 1
+    print(f"DF: {df}")
+
+    # Test homoscedasticity --> violated
+    stat, p_value = stats.levene( 
+        GA_df_masks[GA_df_masks['Mask type']=='1_natural']['Efficacy'],
+        GA_df_masks[GA_df_masks['Mask type']=='6_blocked']['Efficacy'],
+        GA_df_masks[GA_df_masks['Mask type']=='2_scrambled']['Efficacy'], 
+        GA_df_masks[GA_df_masks['Mask type']=='5_lines']['Efficacy'], 
+        GA_df_masks[GA_df_masks['Mask type']=='4_geometric']['Efficacy'], 
+        center='mean')
+    print("Levene's")
+    print(f"stat {stat}, p {p_value}")
+
+    # Kruskal Wallice test --> significant
+    stat, p_value  = stats.kruskal( 
+        GA_df_masks[GA_df_masks['Mask type']=='1_natural']['Efficacy'],
+        GA_df_masks[GA_df_masks['Mask type']=='6_blocked']['Efficacy'],
+        GA_df_masks[GA_df_masks['Mask type']=='2_scrambled']['Efficacy'], 
+        GA_df_masks[GA_df_masks['Mask type']=='5_lines']['Efficacy'], 
+        GA_df_masks[GA_df_masks['Mask type']=='4_geometric']['Efficacy'])
+    print("Kruskal")
+    print(f"stat {stat}, p {p_value}")
+
+    # Post hoc Dunn test --> do in R for Z-stat?
+    print("Post hoc Dunn")
+    p_values = sp.posthoc_dunn(GA_df_masks, 'Efficacy', 'Mask type','bonferroni')
+    print(p_values)
+    p_values < 0.05
+
 
 def PLS_model(boot=0, exp=True):
     from sklearn.cross_decomposition import PLSRegression
@@ -631,24 +707,73 @@ def model_plots():
     big_df.to_csv(os.path.join(file_path, 'R2_per_layer.csv'), index=False)
     r_big_df.to_csv(os.path.join(file_path, 'r_R2_per_layer.csv'), index=False)
 
-    # R2 plot
-    fig, axes = plt.subplots(1, figsize=(6,4))
-    sns.set_palette('colorblind')
+    # Differences
+    difference = big_df['r2'] - r_big_df['r2']
+    difference = pd.concat([difference, big_df['layer']], axis=1)
+
+    # New version (with difference)
+    sns.set_context('paper', rc={'font.size': 16, 'xtick.labelsize': 10, 'ytick.labelsize':10,
+                             'figure.titleweight': 'bold', 'axes.labelsize': 16, 'axes.titlesize': 10, 'legend.fontsize': 10})
+    palette_cb = sns.color_palette("colorblind", 10)
+    
+    fig, axes = plt.subplots(1, 2, figsize=(10, 5), dpi=500)
     sns.set_style('white')
     sns.set_style("ticks")
-    # sns.pointplot(data=big_df, x="layer", y="r2", errorbar='ci', capsize=0.3)
-    sns.pointplot(data=big_df, x="layer", y="r2", color ='blue', label='pretrained')
-    sns.pointplot(data=r_big_df, x="layer", y="r2", color = 'lightblue', label='random')
-    sns.despine(offset=15)
+    sns.pointplot(data=big_df, x="layer", y="r2", color =palette_cb[0], label='pretrained', ax=axes[0])
+    sns.pointplot(data=r_big_df, x="layer", y="r2", color = palette_cb[9], label='random', ax=axes[0])
+    sns.despine(offset=10)
     xlabels = ['layer 1', 'layer 2', 'layer 3', 'layer 4', 'layer 5', 'all']
-    plt.xticks(np.arange(len(xlabels)),xlabels)
-    plt.ylabel('$r^2$')
-    plt.ylim([0, 0.5])
-    plt.legend(handles=[
-        Line2D([], [], marker='_', color="blue", label="pretrained"), 
-        Line2D([], [], marker='_', color="lightblue", label="random")], bbox_to_anchor=(1.04, 1), loc="upper left")
-    plt.tight_layout()
-    image_path = os.path.join(wd, f'analysis/r2-layers.png')
+    axes[0].set_xticklabels(xlabels)
+    axes[0].set_xlabel('')
+    axes[0].set_ylabel('$r^2$')
+    axes[0].legend(handles=[
+        Line2D([], [], marker='_', color=palette_cb[0], label="pretrained"), 
+        Line2D([], [], marker='_', color=palette_cb[9], label="random")], loc="upper left")
+    sns.pointplot(data=difference, x="layer", y="r2", color = palette_cb[1], label='difference', ax=axes[1])
+    # axes[1].axes.yaxis.set_visible(False)
+    # axes[1].spines['left'].set_visible(False)
+    axes[1].set_xticklabels(xlabels)
+    axes[1].set_ylabel('Difference in ' + '$r^2$')
+    axes[1].set_xlabel('')
+    axes[1].axhline(y=0.0, color='gray', linestyle='--', clip_on = False)
+    plt.tight_layout(pad=2)
+    image_path = os.path.join(wd, 'analysis/r2-layers.png')
+    plt.savefig(image_path)
+    plt.clf()
+
+
+    fig, axes = plt.subplots(1, 2, figsize=(10, 5), dpi=500)
+    sns.set_style('white')
+    sns.set_style("ticks")
+    sns.pointplot(data=big_df.iloc[0:5], x="layer", y="r2", color =palette_cb[0], label='pretrained', ax=axes[0])
+    sns.pointplot(data=r_big_df.iloc[0:5], x="layer", y="r2", color = palette_cb[9], label='random', ax=axes[0])
+    only_all_pre = pd.DataFrame()
+    only_all_pre['r2'] = [float('nan'), float('nan'), float('nan'), float('nan'), float('nan'), big_df.iloc[5]['r2']]
+    only_all_pre['layer'] = layers_oi
+    sns.pointplot(data=only_all_pre, x="layer", y="r2", color =palette_cb[0], ax=axes[0], markers='x')
+    only_all_r = pd.DataFrame()
+    only_all_r['r2'] = [float('nan'), float('nan'), float('nan'), float('nan'), float('nan'), r_big_df.iloc[5]['r2']]
+    only_all_r['layer'] = layers_oi
+    sns.pointplot(data=only_all_r, x="layer", y="r2", color =palette_cb[9], ax=axes[0], markers='x')
+    sns.despine(offset=10)
+    xlabels = ['layer 1', 'layer 2', 'layer 3', 'layer 4', 'layer 5', 'all']
+    axes[0].set_xticklabels(xlabels)
+    axes[0].set_xlabel('')
+    axes[0].set_ylabel('$r^2$')
+    axes[0].legend(handles=[
+        Line2D([], [], marker='_', color=palette_cb[0], label="pretrained"), 
+        Line2D([], [], marker='_', color=palette_cb[9], label="random")], loc="upper left")
+    sns.pointplot(data=difference, x="layer", y="r2", color = palette_cb[1], label='difference', ax=axes[1])
+    axes[1].set_xticklabels(xlabels)
+    axes[1].set_ylabel('Difference in ' + '$r^2$')
+    axes[1].set_xlabel('')
+    axes[1].axhline(y=0.0, color='gray', linestyle='--', clip_on = False)
+    only_all_dif = pd.DataFrame()
+    only_all_dif['r2'] = [float('nan'), float('nan'), float('nan'), float('nan'), float('nan'), difference.iloc[5]['r2']]
+    only_all_dif['layer'] = layers_oi
+    sns.pointplot(data=only_all_dif, x="layer", y="r2", color =palette_cb[1], ax=axes[0], markers='x')
+    plt.tight_layout(pad=2)
+    image_path = os.path.join(wd, 'analysis/r2-layers.png')
     plt.savefig(image_path)
     plt.clf()
 
@@ -958,13 +1083,39 @@ def model_plots():
     image_path = os.path.join(wd, 'analysis/predictions/corplot.png')
     plt.savefig(image_path)
 
+    # Cor plot layer 4
+    fig, axes = plt.subplots(dpi=500, figsize=(3,3))
+
+    layer = 'layer4'
+    label = 'layer 4'
+    index = 3
+
+    pred_df = pd.concat([pd.DataFrame(preds[:, index]), pd.DataFrame(y)], axis=1)
+    pred_df.columns = ['y_pred', 'y']
+
+    sns.regplot(x='y', y='y_pred', data=pred_df, color='red', ci=None, scatter_kws={'alpha':0.2})
+    sns.set_style({"xtick.direction": "in","ytick.direction": "in", "font_scale": 15})
+    sns.despine()
+
+    r, p = pearsonr(pred_df['y'], pred_df['y_pred'])
+    r2 = r**2
+
+    plt.xlabel('Efficacy')
+    plt.ylabel('Predicted efficacy')
+    plt.title(f'layer 4: $r^2$ = {r**2:.3f}')
+    plt.xticks([],size=20)
+    plt.yticks([], size=20)
+
+    image_path = os.path.join(wd, 'analysis/predictions/corplot.png')
+    plt.savefig(image_path)
+
     # Plot predictions pretrained versus random layer 4 
     pred_df = pd.concat([pd.DataFrame(preds[:, 3]),pd.DataFrame(r_preds[:, 3]), pd.DataFrame(y)], axis=1)
     pred_df.columns = ['y_pred', 'ry_pred',  'y']
     pred_df = pd.concat([GA_df_masks, pred_df], axis=1)
 
-    random.seed(1)
-    im_select = np.random.choice(pd.unique(trial_file['ImageID']), size=60, replace = False)
+    random.seed(0)
+    im_select = np.random.choice(pd.unique(trial_file['ImageID']), size=80, replace = False)
     n_paths = []
     path_ids = []
 
@@ -977,7 +1128,6 @@ def model_plots():
     labels = ['natural', 'lines', 'blocked', 'geometric', 'scrambled']
     fig, axes = plt.subplots(1, len(masks_ordered), dpi=500, figsize=(15,4), sharex=True, sharey=True)
     for i in range(len(masks_ordered)):
-        random.seed(0)
         mask = masks_ordered[i]
         
         coordinates_df = pd.DataFrame()
@@ -997,8 +1147,8 @@ def model_plots():
 
         # plot images in regplot
         from matplotlib.offsetbox import OffsetImage, AnnotationBbox
-        sns.scatterplot(x='ry_pred', y='y_pred', data=coordinates_df, hue='complexity', ax=axes[i])
-        sns.despine(offset=10)
+        sns.scatterplot(x='ry_pred', y='y_pred', data=coordinates_df, ax=axes[i])
+        sns.despine(offset=10, trim=True)
         for x0, y0, path in zip(x, y, n_paths):
             im = Image.open(path)
             im = np.asarray(im)
@@ -1020,49 +1170,36 @@ def model_plots():
     plt.tight_layout(pad=2)
     image_path = os.path.join(wd, 'analysis/predictions/pre_vs_random.png')
     plt.savefig(image_path)
+    plt.clf()
 
     # Complexity plot
+    norm = plt.Normalize(GA_df_masks['Complexity'].min(), GA_df_masks['Complexity'].max())
+    sm = plt.cm.ScalarMappable(cmap="crest", norm=norm)
+    sm.set_array([])
+
     labels = ['natural', 'lines', 'blocked', 'geometric', 'scrambled']
-    # fig, axes = plt.subplots(1, len(masks_ordered), dpi=500, figsize=(15,4), sharex=True, sharey=True)
     fig, axes = plt.subplots(1, len(masks_ordered), dpi=500, figsize=(15,4))
     for i in range(len(masks_ordered)):
         random.seed(0)
         mask = masks_ordered[i]
         
-        coordinates_df = pd.DataFrame()
-        x = []
-        y = [] 
-        sc_complexities = []
-        for j in range(len(path_ids)):
-            path_id = path_ids[j][i]       
-            select_pred = pred_df[pred_df['index']==path_id]
-            x.append(select_pred['ry_pred'].values[0])
-            y.append(select_pred['y_pred'].values[0])
-            sc_complexities.append(select_pred['Complexity'].values[0])
-        
-        coordinates_df['ry_pred'] = x
-        coordinates_df['y_pred'] = y
-        coordinates_df['complexity'] = sc_complexities
+        select_df = pred_df[pred_df['Mask type'] == mask]
 
         # plot images in regplot
-        from matplotlib.offsetbox import OffsetImage, AnnotationBbox
-        sns.scatterplot(x='ry_pred', y='y_pred', data=coordinates_df, hue='complexity', ax=axes[i])
+        sc = sns.scatterplot(data=select_df, x='ry_pred', y='y_pred', hue='Complexity', ax=axes[i], palette='crest', alpha=0.8)
         sns.despine(offset=10)
-        # for x0, y0, path in zip(x, y, n_paths):
-        #     im = Image.open(path)
-        #     im = np.asarray(im)
-        #     ab = AnnotationBbox(OffsetImage(im, zoom=0.03), (x0, y0), frameon=False)
-        #     axes[i].add_artist(ab)
 
-        max = np.ceil(np.max([coordinates_df['y_pred'], coordinates_df['ry_pred']])*10)/10
-        min = np.floor(np.min([coordinates_df['y_pred'], coordinates_df['ry_pred']])*10)/10
+        max = np.ceil(np.max([select_df['y_pred'], select_df['ry_pred']])*10)/10
+        min = np.floor(np.min([select_df['y_pred'], select_df['ry_pred']])*10)/10
         axes[i].set_xticks(np.linspace(min, max, round((max - min)/0.1) + 1, True))
         axes[i].set_yticks(np.linspace(min, max, round((max - min)/0.1) + 1, True))
         axes[i].plot(axes[i].get_xlim(), axes[i].get_ylim(), ls="--", c=".3")
         axes[i].set_title(labels[i])
         axes[i].set_xlabel('')
         axes[i].set_ylabel('')
-
+        axes[i].legend([],[], frameon=False)
+        
+    axes[i].figure.colorbar(sm, ticks=[], drawedges=False, label='complexity')
     fig.supxlabel('Random')
     fig.supylabel('Pretrained')
     fig.suptitle('Model efficacy predictions')
@@ -1071,9 +1208,9 @@ def model_plots():
     plt.savefig(image_path)
     plt.clf()
 
+    # Pred vs efficacy
     labels = ['natural', 'lines', 'blocked', 'geometric', 'scrambled']
-    # fig, axes = plt.subplots(1, len(masks_ordered), dpi=500, figsize=(15,4), sharex=True, sharey=True)
-    fig, axes = plt.subplots(1, len(masks_ordered), dpi=500, figsize=(15,4))
+    fig, axes = plt.subplots(1, len(masks_ordered), dpi=500, figsize=(16,4))
     for i in range(len(masks_ordered)):
         mask = masks_ordered[i]
         
@@ -1083,24 +1220,28 @@ def model_plots():
         for j in range(len(path_ids)):
             path_id = path_ids[j][i]       
             select_pred = pred_df[pred_df['index']==path_id]
-            x.append(select_pred['y_pred'].values[0])
-            y.append(select_pred['Efficacy'].values[0])
+            x.append(select_pred['Efficacy'].values[0])
+            y.append(select_pred['y_pred'].values[0])
         
-        coordinates_df['y_pred'] = x
-        coordinates_df['efficacy'] = y
+        coordinates_df['y_pred'] = y
+        coordinates_df['efficacy'] = x
 
         # plot images in regplot
         from matplotlib.offsetbox import OffsetImage, AnnotationBbox
-        sns.scatterplot(x='y_pred', y='efficacy', data=coordinates_df, color='salmon', ax=axes[i])
+        sns.scatterplot(x='efficacy', y='y_pred', data=coordinates_df, color='salmon', ax=axes[i])
         sns.despine(offset=10)
         for x0, y0, path in zip(x, y, n_paths):
             im = Image.open(path)
             im = np.asarray(im)
-            ab = AnnotationBbox(OffsetImage(im, zoom=0.03), (x0, y0), frameon=False)
+            ab = AnnotationBbox(OffsetImage(im, zoom=0.025), (x0, y0), frameon=False)
             axes[i].add_artist(ab)
+        
+        select_df = pred_df[pred_df['Mask type'] == mask]
+        max = np.ceil(np.max([select_df['y_pred'], select_df['Efficacy']])*10)/10
+        min = np.floor(np.min([select_df['y_pred'], select_df['Efficacy']])*10)/10
 
-        max = np.ceil(np.max([coordinates_df['y_pred'], coordinates_df['efficacy']])*10)/10
-        min = np.floor(np.min([coordinates_df['y_pred'], coordinates_df['efficacy']])*10)/10
+        # max = np.ceil(np.max([coordinates_df['y_pred'], coordinates_df['efficacy']])*10)/10
+        # min = np.floor(np.min([coordinates_df['y_pred'], coordinates_df['efficacy']])*10)/10
         axes[i].set_xticks(np.linspace(min, max, round((max - min)/0.1) + 1, True))
         axes[i].set_yticks(np.linspace(min, max, round((max - min)/0.1) + 1, True))
         axes[i].plot(axes[i].get_xlim(), axes[i].get_ylim(), ls="--", c=".3")
@@ -1108,11 +1249,70 @@ def model_plots():
         axes[i].set_xlabel('')
         axes[i].set_ylabel('')
 
-    fig.supxlabel('Predicted efficacy')
-    fig.supylabel('Efficay')
-    fig.suptitle('Model predictions')
+    fig.supxlabel('Efficacy')
+    fig.supylabel('Predicted efficacy')
+    # fig.suptitle('Model predictions')
     plt.tight_layout(pad=2)
     image_path = os.path.join(wd, 'analysis/predictions/pred-versus-eff.png')
+    plt.savefig(image_path)
+
+    # Complexity
+    labels = ['natural', 'lines', 'blocked', 'geometric', 'scrambled']
+    fig, axes = plt.subplots(1, len(masks_ordered), dpi=500, figsize=(16,4))
+    for i in range(len(masks_ordered)):
+        mask = masks_ordered[i]
+        
+        select_df = pred_df[pred_df['Mask type'] == mask]
+        sc = sns.scatterplot(data=select_df, x='y_pred', y='Efficacy', hue='Complexity', ax=axes[i], palette='crest', alpha=0.8)
+        sns.despine(offset=10)
+
+        max = np.ceil(np.max([select_df['y_pred'], select_df['Efficacy']])*10)/10
+        min = np.floor(np.min([select_df['y_pred'], select_df['Efficacy']])*10)/10
+        axes[i].set_xticks(np.linspace(min, max, round((max - min)/0.1) + 1, True))
+        axes[i].set_yticks(np.linspace(min, max, round((max - min)/0.1) + 1, True))
+        axes[i].plot(axes[i].get_xlim(), axes[i].get_ylim(), ls="--", c=".3")
+        axes[i].set_title(labels[i])
+        axes[i].set_xlabel('')
+        axes[i].set_ylabel('')
+        axes[i].legend([],[], frameon=False)
+
+    axes[i].figure.colorbar(sm, ticks=[], drawedges=False, label='complexity')
+    fig.supxlabel('Predicted efficacy')
+    fig.supylabel('Efficacy')
+    fig.suptitle('Model predictions')
+    plt.tight_layout(pad=2)
+    image_path = os.path.join(wd, 'analysis/predictions/pred-versus-eff-complex.png')
+    plt.savefig(image_path)
+
+    # Prediction per layer
+    labels = ['natural', 'lines', 'blocked', 'geometric', 'scrambled']
+    fig, axes = plt.subplots(1, len(masks_ordered), dpi=500, figsize=(18,4))
+    for i in range(len(masks_ordered)):
+        mask = masks_ordered[i]
+        
+        select_df = pred_df[pred_df['Mask type'] == mask]
+        sns.regplot(data=select_df, x='Efficacy', y='y_pred',ax=axes[i], color='red', ci=None, scatter_kws={'alpha':0.3})
+        sns.despine(offset=10)
+
+        r, p = pearsonr(select_df['y_pred'], select_df['Efficacy'])
+        r2 = r**2
+
+        max = np.ceil(np.max([select_df['y_pred'], select_df['Efficacy']])*10)/10
+        min = np.floor(np.min([select_df['y_pred'], select_df['Efficacy']])*10)/10
+        label = labels[i]
+        axes[i].set_xticks(np.linspace(min, max, round((max - min)/0.1) + 1, True), fontsize=3)
+        axes[i].set_yticks(np.linspace(min, max, round((max - min)/0.1) + 1, True), fontsize=3)
+        axes[i].plot(axes[i].get_xlim(), axes[i].get_ylim(), ls="--", c=".3")
+        axes[i].set_title(f'{label}: $r^2$ = {r**2:.3f}')
+        axes[i].set_xlabel('')
+        axes[i].set_ylabel('')
+        axes[i].legend([],[], frameon=False)
+
+    fig.supxlabel('Efficacy')
+    fig.supylabel('Predicted efficacy')
+    # fig.suptitle('Model predictions')
+    plt.tight_layout(pad=2)
+    image_path = os.path.join(wd, 'analysis/predictions/pred-versus-eff-per-layer.png')
     plt.savefig(image_path)
 
 
@@ -1146,6 +1346,44 @@ def calc_complexity():
             os.makedirs(file_path)
 
     np.save(os.path.join(file_path, "CF_complexity.npy"), cfs)
+
+    mask_paths = pd.unique(trial_file['mask_path'])
+    cfs = []
+    n_paths = []
+    m_types = [] 
+    for i in range(len(mask_paths)):
+        print(f'mask {i}')
+
+        path = mask_paths[i]
+
+        if path != 'no_mask':
+            n_path = os.path.join(wd, path[53:])
+            n_paths.append(n_path)
+
+            m_type = path.split('/')[9]
+            m_types.append(m_type)
+
+            # compress image
+            im = Image.open(n_path)
+            im25_path = n_path.split('.')[0] + '_C.jpg'
+            im.save(im25_path,"JPEG", quality=25)
+
+            # Calculate compression factor
+            original_size = os.path.getsize(n_path)
+            encoded_size = os.path.getsize(im25_path)
+            compression_factor = (original_size) / (encoded_size)
+            cfs.append(compression_factor)
+
+            # remove compress
+            os.remove(im25_path)
+    
+    mask_cf = pd.DataFrame()
+    mask_cf['path'] = n_paths
+    mask_cf['type'] = m_types
+    mask_cf['cfs'] = cfs
+
+    mask_cf.groupby('type')['cfs'].mean()
+    mask_cf.groupby('type')['cfs'].std()
 
 
 
